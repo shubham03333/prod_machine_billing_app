@@ -478,10 +478,14 @@ const [rentalFilter, setRentalFilter] = useState({
 const fetchExpenses = async () => {
   try {
     const res = await fetch('/api/expenses')
+    if (!res.ok) {
+      throw new Error('Failed to fetch expenses')
+    }
     const data = await res.json()
-    setExpenses(data)
+    setExpenses(Array.isArray(data) ? data : [])
   } catch (err) {
     console.error('Failed to fetch expenses')
+    setExpenses([])
   }
 }
 
@@ -966,7 +970,7 @@ const getExpenseCategory = (expense: Expense) => {
   return 'Other'
 }
 
-  const filteredExpenses = (expenses || [])
+  const filteredExpenses = (Array.isArray(expenses) ? expenses : [])
     .filter(expense => {
       const expenseDate = new Date(expense.date)
       const fromDate = expenseFilter.dateFrom ? new Date(expenseFilter.dateFrom) : null
@@ -999,7 +1003,7 @@ const getExpenseCategory = (expense: Expense) => {
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-  const filteredCustomers = (customers || [])
+  const filteredCustomers = (Array.isArray(customers) ? customers : [])
     .filter(customer => {
       if (customerFilter.contactNumber) {
         const filterNormalized = customerFilter.contactNumber.replace(/\D/g, '')

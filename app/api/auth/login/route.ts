@@ -1,7 +1,5 @@
-<<<<<<< HEAD
 export const dynamic = 'force-dynamic';
-=======
->>>>>>> 704a47cb8ee7fd6dda01a9880d1058806fae34d8
+
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
