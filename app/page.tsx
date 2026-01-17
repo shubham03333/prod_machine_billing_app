@@ -318,6 +318,10 @@ const [rentalFilter, setRentalFilter] = useState({
   const [showBillModal, setShowBillModal] = useState(false)
   const [selectedRentalsForBill, setSelectedRentalsForBill] = useState<Rental[]>([])
   const [billDueDate, setBillDueDate] = useState('')
+  const [showDeleteRentalModal, setShowDeleteRentalModal] = useState(false)
+  const [showDeleteExpenseModal, setShowDeleteExpenseModal] = useState(false)
+  const [rentalToDelete, setRentalToDelete] = useState<Rental | null>(null)
+  const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null)
   const [editCustomerData, setEditCustomerData] = useState({
     name: '',
     contactNumber: '',
@@ -655,11 +659,21 @@ const fetchBills = async () => {
   }
 
   const deleteRental = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this rental?')) return
+    const rental = rentals.find(r => r.id === id)
+    if (rental) {
+      setRentalToDelete(rental)
+      setShowDeleteRentalModal(true)
+    }
+  }
+
+  const confirmDeleteRental = async () => {
+    if (!rentalToDelete) return
 
     try {
-      await fetch(`/api/rentals/${id}`, { method: 'DELETE' })
+      await fetch(`/api/rentals/${rentalToDelete.id}`, { method: 'DELETE' })
       fetchRentals()
+      setShowDeleteRentalModal(false)
+      setRentalToDelete(null)
     } catch (err) {
       console.error('Failed to delete rental')
     }
@@ -804,11 +818,21 @@ const fetchBills = async () => {
   }
 
   const deleteExpense = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this expense?')) return
+    const expense = expenses.find(e => e.id === id)
+    if (expense) {
+      setExpenseToDelete(expense)
+      setShowDeleteExpenseModal(true)
+    }
+  }
+
+  const confirmDeleteExpense = async () => {
+    if (!expenseToDelete) return
 
     try {
-      await fetch(`/api/expenses/${id}`, { method: 'DELETE' })
+      await fetch(`/api/expenses/${expenseToDelete.id}`, { method: 'DELETE' })
       fetchExpenses()
+      setShowDeleteExpenseModal(false)
+      setExpenseToDelete(null)
     } catch (err) {
       console.error('Failed to delete expense')
     }
@@ -2620,6 +2644,90 @@ if (user.role === 'admin') {
     </div>
   </div>
 )}
+
+      {/* Delete Rental Modal */}
+      {showDeleteRentalModal && rentalToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Delete Rental</h2>
+            <div className="space-y-4">
+              <p className="text-gray-700">
+                Are you sure you want to delete this rental?
+              </p>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="space-y-2">
+                  <div><strong>Machine:</strong> {rentalToDelete.machineType}</div>
+                  <div><strong>Customer:</strong> {rentalToDelete.customer.name}</div>
+                  <div><strong>Amount:</strong> {formatCurrency(rentalToDelete.totalAmount)}</div>
+                  <div><strong>Date:</strong> {formatDateDDMMYYYY(rentalToDelete.date)}</div>
+                </div>
+              </div>
+              <p className="text-red-600 text-sm">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-4 mt-6">
+              <button
+                onClick={confirmDeleteRental}
+                className="flex-1 bg-red-500 text-white p-2 rounded-lg hover:bg-red-600"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteRentalModal(false)
+                  setRentalToDelete(null)
+                }}
+                className="flex-1 bg-gray-500 text-white p-2 rounded-lg hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Expense Modal */}
+      {showDeleteExpenseModal && expenseToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Delete Expense</h2>
+            <div className="space-y-4">
+              <p className="text-gray-700">
+                Are you sure you want to delete this expense?
+              </p>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="space-y-2">
+                  <div><strong>Description:</strong> {expenseToDelete.description}</div>
+                  <div><strong>Amount:</strong> {formatCurrency(expenseToDelete.amount)}</div>
+                  <div><strong>Operator:</strong> {expenseToDelete.operator.name}</div>
+                  <div><strong>Date:</strong> {formatDateDDMMYYYY(expenseToDelete.date)}</div>
+                </div>
+              </div>
+              <p className="text-red-600 text-sm">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-4 mt-6">
+              <button
+                onClick={confirmDeleteExpense}
+                className="flex-1 bg-red-500 text-white p-2 rounded-lg hover:bg-red-600"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => {
+                  setShowDeleteExpenseModal(false)
+                  setExpenseToDelete(null)
+                }}
+                className="flex-1 bg-gray-500 text-white p-2 rounded-lg hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
