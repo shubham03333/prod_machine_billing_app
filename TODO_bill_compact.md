@@ -1,0 +1,7 @@
+- Reduce font sizes in bill header (title, subtitle, contact info)
+- Reduce font sizes in bill details section (customer info, bill info)
+- Reduce font sizes in rental details table (headers, cells)
+- Reduce font sizes in payment summary cards
+- Reduce font sizes in payment history section
+- Reduce padding and margins throughout the component for compactness
+- Test the changes to ensure no overflow and better fit

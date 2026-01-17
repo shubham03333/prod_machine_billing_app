@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  role      String   // 'admin' or 'operator'
+  pin       String   @unique // 4-digit PIN
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rentals  Rental[]
+  expenses Expense[]
+}
+
+model Customer {
+  id            Int      @id @default(autoincrement())
+  name          String
+  contactNumber String
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rentals Rental[]
+  bills   Bill[]
+}
+
+model Rental {
+  id               Int      @id @default(autoincrement())
+  machineType      String   // 'tractor', 'harvester', 'excavator'
+  unitType         String   // 'hourly', 'trip', 'acre', 'guntha'
+  quantity         Float
+  acreage          Float?   // For acre-based rentals, supports decimals
+  pricePerUnit     Float
+  totalAmount      Float
+  description      String?  // Nature of work
+  customerId       Int
+  customer         Customer @relation(fields: [customerId], references: [id])
+  operatorId       Int
+  operator         User     @relation(fields: [operatorId], references: [id])
+  billId           Int?
+  bill             Bill?    @relation(fields: [billId], references: [id])
+  date             DateTime
+  dieselCost       Float    @default(0)
+  maintenanceCost  Float    @default(0)
+  operatorSalary   Float    @default(0)
+  paidAmount       Float    @default(0)
+  paymentStatus    String   @default("UNPAID")
+  paymentMode      String?  // 'Cash', 'Online', 'Cheque', 'UPI'
+  // JCB hourly specific fields
+  normalHourlyRate Float?  // For JCB excavator hourly work
+  breakerHourlyRate Float? // For JCB excavator breaker work
+  timeSlots        Json?   // Array of {startTime: string, endTime: string, isBreaker: boolean, calculatedAmount: number}
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  payments Payment[]
+}
+
+model Expense {
+  id               Int      @id @default(autoincrement())
+  description      String
+  amount           Float
+  date             DateTime
+  operatorId       Int
+  operator         User     @relation(fields: [operatorId], references: [id])
+  category         String?  // 'Diesel', 'Maintenance', 'Operator Salary', 'Driver Drink', 'Other'
+  dieselCost       Float    @default(0)
+  maintenanceCost  Float    @default(0)
+  operatorSalary   Float    @default(0)
+  driverDrinkCost  Float    @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Payment {
+  id        Int      @id @default(autoincrement())
+  rentalId  Int
+  rental    Rental   @relation(fields: [rentalId], references: [id])
+  amount    Float
+  mode      String   // 'Cash', 'Online', 'Cheque', 'UPI'
+  date      DateTime @default(now())
+}
+
+model Bill {
+  id          Int      @id @default(autoincrement())
+  billNumber  String   @unique
+  customerId  Int
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  rentals     Rental[]
+  totalAmount Float
+  paidAmount  Float    @default(0)
+  status      String   @default("UNPAID") // 'PAID', 'PARTIAL', 'UNPAID'
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
