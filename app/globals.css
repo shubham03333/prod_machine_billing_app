@@ -8,18 +8,56 @@
   --background-end-rgb: 255, 255, 255;
 }
 
+html,
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  color: #111827;
+  background: #ffffff;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  .glass-panel {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  }
+
+  .glass-input {
+    @apply w-full min-w-0 max-w-full p-3 rounded-xl text-base text-gray-900 placeholder-gray-400;
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    color-scheme: light;
+  }
+
+  .dash-input {
+    @apply px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800 min-w-0;
+  }
+  .dash-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+    border-color: #93c5fd;
+  }
+
+  .dash-metric {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
   }
 }

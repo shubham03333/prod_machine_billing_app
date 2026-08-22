@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { checkReadOnlyGuard } from '@/lib/auth-guard'
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,6 +41,9 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
+    const denied = await checkReadOnlyGuard(request)
+    if (denied) return denied
+
     const { id, name, contactNumber, address } = await request.json()
 
     if (!id || !name || !contactNumber) {
@@ -64,6 +68,9 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const denied = await checkReadOnlyGuard(request)
+    if (denied) return denied
+
     const { id } = await request.json()
 
     if (!id) {

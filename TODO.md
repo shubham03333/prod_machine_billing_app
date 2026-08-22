@@ -1,10 +1,9 @@
-# TODO: Implement Bill Translation and Language Selection for WhatsApp Sharing
+# TODO
 
-## Tasks
-- [x] Add state for selected language (English/Marathi) in BillComponent
-- [x] Add a language selector UI (radio buttons) next to the WhatsApp button
-- [x] Create a translation function to convert bill text to Marathi using a translation object
-- [x] Modify shareBillOnWhatsApp to use the selected language's text
-- [x] Update the bill text generation to support both languages
-- [x] Test the language selection and WhatsApp sharing in both languages
-- [x] Ensure Marathi text displays correctly on WhatsApp
+- [ ] Add a new PIN-based read-only admin user (PIN: 9823) via seed/SQL instructions
+- [x] Update login API response to include `canEditAdmin` (computed from PIN)
+
+- [ ] Update UI (app/page.tsx) for admin dashboard to hide ALL edit/delete/add expense actions when `canEdit === false`
+- [ ] Add backend guards for expense update/delete endpoints using PIN-based `canEdit`
+- [ ] Test: login with PIN 9823 and verify buttons are removed and PUT/DELETE fail
+

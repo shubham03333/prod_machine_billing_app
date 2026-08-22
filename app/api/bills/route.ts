@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { checkReadOnlyGuard, isReadOnlyRequest } from '@/lib/auth-guard';
 
 const prisma = new PrismaClient();
 
@@ -57,6 +58,8 @@ export async function GET(request: NextRequest) {
       take: limit
     });
 
+    const readOnly = await isReadOnlyRequest(request);
+
     // Sync paidAmount for each bill and parse timeSlots
     const billsWithParsedTimeSlots = await Promise.all(bills.map(async (bill) => {
       // Calculate accurate paidAmount from rental.paidAmount (since payments may not be recorded individually)
@@ -66,14 +69,16 @@ export async function GET(request: NextRequest) {
 
       // Update bill's paidAmount if it doesn't match
       if (bill.paidAmount !== accuratePaidAmount) {
-        await prisma.bill.update({
-          where: { id: bill.id },
-          data: {
-            paidAmount: accuratePaidAmount,
-            status: accuratePaidAmount >= bill.totalAmount ? 'PAID' :
-                    accuratePaidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID'
-          }
-        });
+        if (!readOnly) {
+          await prisma.bill.update({
+            where: { id: bill.id },
+            data: {
+              paidAmount: accuratePaidAmount,
+              status: accuratePaidAmount >= bill.totalAmount ? 'PAID' :
+                      accuratePaidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID'
+            }
+          });
+        }
         bill.paidAmount = accuratePaidAmount;
         bill.status = accuratePaidAmount >= bill.totalAmount ? 'PAID' :
                       accuratePaidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID';
@@ -111,6 +116,9 @@ export async function GET(request: NextRequest) {
 // POST /api/bills - Create a new bill
 export async function POST(request: NextRequest) {
   try {
+    const denied = await checkReadOnlyGuard(request);
+    if (denied) return denied;
+
     const body = await request.json();
     const { customerId, rentalIds, dueDate } = body;
 

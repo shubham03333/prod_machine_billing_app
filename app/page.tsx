@@ -1,9 +1,11 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { Minus, LogIn, BarChart3, Trash2, Plus, RefreshCw, Edit, LogOut, Home as HomeIcon, FileText, Users, Phone, Fuel, Clock, User, Wrench, IndianRupee } from 'lucide-react'
+import { Minus, LogIn, BarChart3, Trash2, Plus, RefreshCw, Edit, LogOut, FileText, Users, Phone, Fuel, Clock, User, Wrench, IndianRupee, Truck, MapPin, Calendar, CreditCard, CheckCircle2, Wallet, Receipt, Leaf, Download, LayoutDashboard, TrendingUp, TrendingDown } from 'lucide-react'
 import { StatsChart } from '../components/StatsChart'
 import BillComponent from '../components/BillComponent'
+import { canAccessAdminDashboard, canEditAdminData, isReadOnlyAdmin } from '@/lib/roles'
+
 
 
 const STANDARD_PRICES = {
@@ -59,6 +61,7 @@ const parseQuantity = (input: string, unit: string) => {
 
 const formatQuantityForDisplay = (quantity: number, unit: string) => {
   if (unit === 'acre') {
+   
     const acres = Math.floor(quantity);
     const gunthas = Math.round((quantity - acres) * 40);
     return `${acres}.${gunthas.toString().padStart(2, '0')}`;
@@ -78,7 +81,10 @@ interface User {
   id: number
   name: string
   role: string
+  pin?: string
+  canEditAdmin?: boolean
 }
+
 
 interface Operator {
   id: number
@@ -272,6 +278,9 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [expenseDriverDrinkCost, setExpenseDriverDrinkCost] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
+  const [operatorRentalsShown, setOperatorRentalsShown] = useState(5)
+  const [operatorRentalSearch, setOperatorRentalSearch] = useState('')
   const [mobileError, setMobileError] = useState('')
   const [filter, setFilter] = useState('today')
   const [prices, setPrices] = useState(STANDARD_PRICES)
@@ -337,7 +346,9 @@ const [rentalFilter, setRentalFilter] = useState({
     if (showBillModal && selectedRentalsForBill.length > 0 && selectedRentalsForBill[0].billId) {
       const fetchBillDetails = async () => {
         try {
-          const res = await fetch(`/api/bills/${selectedRentalsForBill[0].billId}`)
+          const res = await fetch(`/api/bills/${selectedRentalsForBill[0].billId}`, {
+            headers: { 'x-user-pin': user?.pin || '' },
+          })
           if (res.ok) {
             const bill = await res.json()
             setBillDetails(bill)
@@ -420,8 +431,17 @@ const [rentalFilter, setRentalFilter] = useState({
       fetchExpenses()
       fetchOperators()
       fetchBills()
+      if (user.role === 'operator') {
+        setSelectedOperatorId(user.id)
+      }
     }
   }, [user])
+
+  useEffect(() => {
+    if (!successMessage) return
+    const timer = setTimeout(() => setSuccessMessage(''), 3500)
+    return () => clearTimeout(timer)
+  }, [successMessage])
 
   useEffect(() => {
     if (selectedUnit === 'monthly' || selectedUnit === 'work') {
@@ -505,7 +525,9 @@ const fetchOperators = async () => {
 
 const fetchBills = async () => {
   try {
-    const res = await fetch('/api/bills')
+    const res = await fetch('/api/bills', {
+      headers: { 'x-user-pin': user?.pin || '' },
+    })
     const data = await res.json()
     setBills(Array.isArray(data.bills) ? data.bills : [])
   } catch (err) {
@@ -516,6 +538,10 @@ const fetchBills = async () => {
 
   const saveExpense = async () => {
     if (!user) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     let finalDescription = expenseDescription
     let finalAmount = expenseAmount
@@ -545,7 +571,7 @@ const fetchBills = async () => {
     try {
       const res = await fetch('/api/expenses', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
         body: JSON.stringify({
           description: finalDescription,
           amount: finalAmount,
@@ -565,8 +591,9 @@ const fetchBills = async () => {
         setExpenseDieselCost('')
         setExpenseMaintenanceCost('')
         setExpenseOperatorSalary('')
-        setSelectedOperatorId(null)
+        setSelectedOperatorId(user.role === 'operator' ? user.id : null)
         setError('')
+        setSuccessMessage('Expense saved')
       } else {
         const data = await res.json()
         setError(data.error)
@@ -579,6 +606,10 @@ const fetchBills = async () => {
 
   const createRental = async () => {
     if (!selectedMachine || !selectedUnit || !user || !customerName || !customerContact || !customerAddress) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     let pricePerUnit = prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]]
     let totalAmount: number
@@ -609,7 +640,7 @@ const fetchBills = async () => {
     try {
       const res = await fetch('/api/rentals', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
         body: JSON.stringify({
           machineType: selectedMachine,
           unitType: selectedUnit,
@@ -648,6 +679,7 @@ const fetchBills = async () => {
         setMaintenanceCost('')
         setOperatorSalary('')
         setError('')
+        setSuccessMessage('Rental saved')
       } else {
         const data = await res.json()
         setError(data.error)
@@ -668,9 +700,13 @@ const fetchBills = async () => {
 
   const confirmDeleteRental = async () => {
     if (!rentalToDelete) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     try {
-      await fetch(`/api/rentals/${rentalToDelete.id}`, { method: 'DELETE' })
+      await fetch(`/api/rentals/${rentalToDelete.id}`, {method: 'DELETE', headers: {'x-user-pin': user?.pin || ''}})
       fetchRentals()
       setShowDeleteRentalModal(false)
       setRentalToDelete(null)
@@ -722,12 +758,16 @@ const fetchBills = async () => {
 
   const updateRental = async () => {
     if (!editingRental) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     setLoading(true)
     try {
       const res = await fetch(`/api/rentals/${editingRental.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
         body: JSON.stringify(editRentalData)
       })
 
@@ -769,12 +809,16 @@ const fetchBills = async () => {
 
   const updateCustomer = async () => {
     if (!editingCustomer) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     setLoading(true)
     try {
       const res = await fetch(`/api/customers/${editingCustomer.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
         body: JSON.stringify(editCustomerData)
       })
 
@@ -794,12 +838,16 @@ const fetchBills = async () => {
 
   const updateExpense = async () => {
     if (!editingExpense) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     setLoading(true)
     try {
       const res = await fetch(`/api/expenses/${editingExpense.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
         body: JSON.stringify(editExpenseData)
       })
 
@@ -827,9 +875,13 @@ const fetchBills = async () => {
 
   const confirmDeleteExpense = async () => {
     if (!expenseToDelete) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     try {
-      await fetch(`/api/expenses/${expenseToDelete.id}`, { method: 'DELETE' })
+      await fetch(`/api/expenses/${expenseToDelete.id}`, {method: 'DELETE', headers: {'x-user-pin': user?.pin || ''}})
       fetchExpenses()
       setShowDeleteExpenseModal(false)
       setExpenseToDelete(null)
@@ -839,10 +891,14 @@ const fetchBills = async () => {
   }
 
   const deleteCustomer = async (id: number) => {
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
     if (!confirm('Are you sure you want to delete this customer?')) return
 
     try {
-      await fetch(`/api/customers/${id}`, { method: 'DELETE' })
+      await fetch(`/api/customers/${id}`, {method: 'DELETE', headers: {'x-user-pin': user?.pin || ''}})
       fetchCustomers()
     } catch (err) {
       console.error('Failed to delete customer')
@@ -851,6 +907,10 @@ const fetchBills = async () => {
 
   const addPayment = async () => {
     if (!paymentRental || !additionalAmount || !additionalPaymentMode) return
+    if (isReadOnlyAdmin(user)) {
+      setError('Read-only admin cannot add or edit data')
+      return
+    }
 
     setLoading(true)
     try {
@@ -953,8 +1013,8 @@ const fetchBills = async () => {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+      <div className="min-h-screen bg-white flex items-center justify-center px-4 overflow-x-hidden">
+      <div className="bg-white p-6 sm:p-8 rounded-lg shadow-md w-full max-w-md min-w-0">
         <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="mx-auto mb-4 w-32 h-auto" />
         <h1 className="text-2xl font-bold text-center mb-6">🚜 JD Agro & Earthmovers</h1>
           <div className="space-y-4">
@@ -962,9 +1022,10 @@ const fetchBills = async () => {
               type="password"
               placeholder="Enter PIN"
               value={pin}
-              onChange={(e) => setPin(e.target.value)}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 10))}
               className="w-full p-3 border rounded-lg text-center text-2xl text-black"
-              maxLength={4}
+              inputMode="numeric"
+              maxLength={10}
             />
             <button
               onClick={login}
@@ -1092,139 +1153,150 @@ const getExpenseCategory = (expense: Expense) => {
     return sum;
   }, 0)
 
-if (user.role === 'admin') {
+  const canEdit = canEditAdminData(user)
+  const showAdminDashboard =
+    user.role === 'admin' ||
+    user.role === 'readonly_admin' ||
+    user.pin === '9823' ||
+    canAccessAdminDashboard(user)
+
+if (showAdminDashboard) {
+  const totalRevenueAll = rentals.reduce((sum, r) => sum + r.totalAmount, 0)
+  const totalExpensesAll = expenses.reduce((sum, e) => sum + e.amount, 0)
+  const netProfitAll = totalRevenueAll - totalExpensesAll
+  const adminTabs = [
+    { id: 'overview' as const, label: 'Overview', Icon: LayoutDashboard, show: true },
+    { id: 'add-expense' as const, label: 'Add Expense', Icon: Plus, show: canEdit },
+    { id: 'expenses' as const, label: 'Expenses', Icon: Wallet, show: true },
+    { id: 'customers' as const, label: 'Customers', Icon: Users, show: true },
+    { id: 'bills' as const, label: 'Bills', Icon: Receipt, show: true },
+  ]
+
   return (
     <>
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col gap-4 mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-center sm:text-left">Admin Dashboard</h1>
-          <div className="flex justify-center sm:justify-end">
-            <button
-              onClick={() => setUser(null)}
-              className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm sm:text-base"
-            >
-              Logout
-            </button>
+      <div className="min-h-screen bg-slate-50 text-slate-900 overflow-x-hidden">
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <img src="/rentralogo.png" alt="JD Agro & Earthmovers" className="h-10 w-10 object-contain shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">JD Agro & Earthmovers</p>
+                <h1 className="text-lg sm:text-xl font-semibold truncate">
+                  {canEdit ? 'Operations Dashboard' : 'Read-only Dashboard'}
+                </h1>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="hidden sm:flex flex-col items-end">
+                <span className="text-sm font-medium text-slate-800">{user.name}</span>
+                <span className="text-[11px] text-slate-500">{canEdit ? 'Administrator' : 'Read-only admin'}</span>
+              </div>
+              <button
+                onClick={() => setUser(null)}
+                className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-sm"
+              >
+                <LogOut size={15} />
+                Logout
+              </button>
+            </div>
           </div>
-        </div>
+          <div className="max-w-7xl mx-auto px-4 pb-3">
+            <nav className="flex gap-1 overflow-x-auto pb-1">
+              {adminTabs.filter(tab => tab.show).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setAdminActiveTab(tab.id)}
+                  className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                    adminActiveTab === tab.id
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <tab.Icon size={16} />
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </header>
 
-          <div className="flex flex-wrap gap-1 mb-6">
-            <button
-              onClick={() => setAdminActiveTab('overview')}
-              className={`px-1 py-1 sm:px-2 sm:py-2 md:px-4 rounded-lg font-medium text-xs sm:text-sm md:text-base ${
-                adminActiveTab === 'overview'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => setAdminActiveTab('add-expense')}
-              className={`px-1 py-1 sm:px-2 sm:py-2 md:px-4 rounded-lg font-medium text-xs sm:text-sm md:text-base ${
-                adminActiveTab === 'add-expense'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Add Expense
-            </button>
-            <button
-              onClick={() => setAdminActiveTab('expenses')}
-              className={`px-1 py-1 sm:px-2 sm:py-2 md:px-4 rounded-lg font-medium text-xs sm:text-sm md:text-base ${
-                adminActiveTab === 'expenses'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              All Expenses
-            </button>
-            <button
-              onClick={() => setAdminActiveTab('customers')}
-              className={`px-1 py-1 sm:px-2 sm:py-2 md:px-4 rounded-lg font-medium text-xs sm:text-sm md:text-base ${
-                adminActiveTab === 'customers'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Customers
-            </button>
-            <button
-              onClick={() => setAdminActiveTab('bills')}
-              className={`px-1 py-1 sm:px-2 sm:py-2 md:px-4 rounded-lg font-medium text-xs sm:text-sm md:text-base ${
-                adminActiveTab === 'bills'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Bills
-            </button>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 py-6">
+            {!canEdit && (
+                <div className="mb-5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-sm">
+                    You are in <strong>read-only</strong> mode. You can view data and export CSVs, but you cannot add, edit, or delete records.
+                </div>
+            )}
 
           {adminActiveTab === 'overview' && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Total Revenue</h3>
-                  <p className="text-3xl font-bold text-green-600">
-                    {formatCurrency(rentals.reduce((sum, r) => sum + r.totalAmount, 0))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-slate-500 truncate">Total Revenue</h3>
+                    <span className="h-9 w-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><TrendingUp size={18} /></span>
+                  </div>
+                  <p className="dash-metric text-2xl sm:text-3xl font-semibold text-slate-900">
+                    {formatCurrency(totalRevenueAll)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Total Expenses</h3>
-                  <p className="text-3xl font-bold text-red-600">
-                    {formatCurrency(expenses.reduce((sum, e) => sum + e.amount, 0))}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-slate-500 truncate">Total Expenses</h3>
+                    <span className="h-9 w-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0"><TrendingDown size={18} /></span>
+                  </div>
+                  <p className="dash-metric text-2xl sm:text-3xl font-semibold text-slate-900">
+                    {formatCurrency(totalExpensesAll)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Net Profit</h3>
-                  <p className="text-3xl font-bold text-blue-600">
-                    {formatCurrency(
-                      rentals.reduce((sum, r) => sum + r.totalAmount, 0) -
-                      expenses.reduce((sum, e) => sum + e.amount, 0)
-                    )}
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-slate-500 truncate">Net Profit</h3>
+                    <span className="h-9 w-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><IndianRupee size={18} /></span>
+                  </div>
+                  <p className={`dash-metric text-2xl sm:text-3xl font-semibold ${netProfitAll >= 0 ? 'text-slate-900' : 'text-rose-600'}`}>
+                    {formatCurrency(netProfitAll)}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Total Paid Amount</h3>
-                  <p className="text-2xl md:text-3xl font-bold text-green-600 break-words">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-6">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Paid</h3>
+                  <p className="dash-metric text-lg font-semibold text-emerald-700">
                     {formatCurrency(totalPaidAmount)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Total Pending Amount</h3>
-                  <p className="text-2xl md:text-3xl font-bold text-red-600 break-words">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Pending</h3>
+                  <p className="dash-metric text-lg font-semibold text-rose-700">
                     {formatCurrency(totalPendingAmount)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Total Acre</h3>
-                  <p className="text-2xl md:text-3xl font-bold text-blue-600 break-words">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Total Acre</h3>
+                  <p className="dash-metric text-lg font-semibold text-slate-900">
                     {totalAcre.toFixed(2)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">JCB Hours</h3>
-                  <p className="text-2xl md:text-3xl font-bold text-blue-600 break-words">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                  <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">JCB Hours</h3>
+                  <p className="dash-metric text-lg font-semibold text-slate-900">
                     {totalJCBHours.toFixed(2)}
                   </p>
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h3 className="text-lg font-semibold mb-2">Breaker Hours</h3>
-                  <p className="text-2xl md:text-3xl font-bold text-blue-600 break-words">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0 sm:col-span-2 xl:col-span-1">
+                  <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Breaker Hours</h3>
+                  <p className="dash-metric text-lg font-semibold text-slate-900">
                     {totalBreakerHours.toFixed(2)}
                   </p>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="p-6 border-b">
-                  <div className="flex justify-between items-center">
-                    <h2 className="text-xl font-semibold">Recent Rentals</h2>
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 sm:p-5 border-b border-slate-100">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between items-center gap-2">
+                    <h2 className="text-base sm:text-lg font-semibold text-slate-900">Recent Rentals</h2>
                     <div className="flex flex-wrap gap-2 items-center">
                       <button
                         onClick={() => {
@@ -1232,37 +1304,39 @@ if (user.role === 'admin') {
                           fetchCustomers()
                           fetchExpenses()
                         }}
-                        className="flex items-center gap-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 whitespace-nowrap"
+                        className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800 whitespace-nowrap"
                       >
                         <RefreshCw size={16} />
                         Refresh
                       </button>
                       <button
                         onClick={exportRentalsToCSV}
-                        className="flex items-center gap-2 px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 whitespace-nowrap"
+                        className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 whitespace-nowrap"
                       >
-                        Export to CSV
+                        <Download size={16} />
+                        Export CSV
                       </button>
-                      <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center">
                         <input
                           type="date"
                           value={rentalFilter.dateFrom}
                           onChange={(e) => setRentalFilter({...rentalFilter, dateFrom: e.target.value})}
-                          className="px-3 py-1 border rounded text-sm min-w-0 flex-1 sm:flex-none"
+                          className="dash-input flex-1 sm:flex-none"
                           placeholder="From Date"
                         />
                         <input
                           type="date"
                           value={rentalFilter.dateTo}
                           onChange={(e) => setRentalFilter({...rentalFilter, dateTo: e.target.value})}
-                          className="px-3 py-1 border rounded text-sm min-w-0 flex-1 sm:flex-none"
+                          className="dash-input flex-1 sm:flex-none"
                           placeholder="To Date"
                         />
-                      </div>
                       <select
                         value={rentalFilter.machine}
                         onChange={(e) => setRentalFilter({...rentalFilter, machine: e.target.value})}
-                        className="px-3 py-1 border rounded text-sm min-w-0 flex-1 sm:flex-none"
+                        className="dash-input flex-1 sm:flex-none"
                       >
                         <option value="">All Machines</option>
                         <option value="tractor">Tractor</option>
@@ -1272,7 +1346,7 @@ if (user.role === 'admin') {
                       <select
                         value={rentalFilter.paymentStatus}
                         onChange={(e) => setRentalFilter({...rentalFilter, paymentStatus: e.target.value})}
-                        className="px-3 py-1 border rounded text-sm min-w-0 flex-1 sm:flex-none"
+                        className="dash-input flex-1 sm:flex-none"
                       >
                         <option value="">All Payment Status</option>
                         <option value="UNPAID">Unpaid</option>
@@ -1291,7 +1365,7 @@ if (user.role === 'admin') {
                           onFocus={() => setShowContactDropdown(contactSearch.length > 0)}
                           onBlur={() => setTimeout(() => setShowContactDropdown(false), 200)}
                           placeholder="Contact Number"
-                          className="px-3 py-1 border rounded text-sm w-full"
+                          className="dash-input w-full"
                         />
                         {showContactDropdown && (
                           <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto mt-1">
@@ -1321,7 +1395,7 @@ if (user.role === 'admin') {
                           value={rentalFilter.customerSearch}
                           onChange={(e) => setRentalFilter({...rentalFilter, customerSearch: e.target.value})}
                           placeholder="Customer Name"
-                          className="px-3 py-1 border rounded text-sm w-full"
+                          className="dash-input w-full"
                         />
                       </div>
                     </div>
@@ -1329,107 +1403,118 @@ if (user.role === 'admin') {
                 </div>
               <div className="overflow-x-auto">
                 <table className="w-full">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Machine</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Operator</th>
-                        <th className="px-6 py-2 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantity</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Paid Amount</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Payment Status</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Pending Amount</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Quantity</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white divide-y divide-slate-100">
                       {filteredRentals.slice((overviewPage - 1) * 10, overviewPage * 10).map((rental) => (
-                        <tr key={rental.id}>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs">
+                        <tr key={rental.id} className="hover:bg-slate-50/80">
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
                             {formatDateDDMMYYYY(rental.date)}
                           </td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs capitalize">{rental.machineType}</td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs">{rental.operator.name}</td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs max-w-24 truncate" title={rental.customer.name}>{rental.customer.name}</td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs">{rental.customer.contactNumber}</td>
-                          <td className="px-2 py-2 whitespace-nowrap text-xs">{rental.quantity} {rental.unitType}</td>
-                          <td className="px-2 py-2 text-xs break-words max-w-24">{formatCurrency(rental.totalAmount)}</td>
-                          <td className="px-2 py-2 text-xs break-words max-w-24">{formatCurrency(rental.paidAmount || 0)}</td>
-                          <td className={`px-2 py-2 text-xs break-words max-w-24 ${getPaymentStatusColor(rental.paymentStatus)}`}>{rental.paymentStatus}</td>
-                          <td className="px-2 py-2 text-xs break-words max-w-24">
+                          <td className="px-3 py-3 whitespace-nowrap text-sm capitalize">{rental.machineType}</td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.operator.name}</td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm max-w-[8rem] truncate" title={rental.customer.name}>{rental.customer.name}</td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.customer.contactNumber}</td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.quantity} {rental.unitType}</td>
+                          <td className="px-3 py-3 text-sm font-medium">{formatCurrency(rental.totalAmount)}</td>
+                          <td className="px-3 py-3 text-sm">{formatCurrency(rental.paidAmount || 0)}</td>
+                          <td className="px-3 py-3 text-sm">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              rental.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-700' :
+                              rental.paymentStatus === 'PARTIALLY_PAID' ? 'bg-amber-50 text-amber-700' :
+                              'bg-rose-50 text-rose-700'
+                            }`}>{rental.paymentStatus}</span>
+                          </td>
+                          <td className="px-3 py-3 text-sm">
                             {rental.paymentStatus === 'PAID' ? (
-                              <span className="text-green-600">{formatCurrency(0)}</span>
+                              <span className="text-emerald-700">{formatCurrency(0)}</span>
                             ) : (
-                              <span className="text-red-600">{formatCurrency(rental.totalAmount - (rental.paidAmount || 0))}</span>
+                              <span className="text-rose-700">{formatCurrency(rental.totalAmount - (rental.paidAmount || 0))}</span>
                             )}
                           </td>
-                          
-                          <td className="px-2 py-2 whitespace-nowrap">
+
+                          <td className="px-3 py-3 whitespace-nowrap">
                             <div className="flex gap-1">
+                              {canEdit && (
+                                  <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        startEditRental(rental)
+                                      }}
+                                      className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                                  >
+                                    <Edit size={14}/>
+                                  </button>
+                              )}
+                              {canEdit && (
+                                  <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setPaymentRental(rental)
+                                      }}
+                                      className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                                  >
+                                    <IndianRupee size={14}/>
+                                  </button>
+                              )}
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  startEditRental(rental)
-                                }}
-                                className="text-blue-600 hover:text-blue-900"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setSelectedRentalForBreakdown(rental)
+                                  }}
+                                  className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50"
                               >
-                                <Edit size={14} />
+                                <BarChart3 size={14}/>
                               </button>
                               <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setPaymentRental(rental)
-                                }}
-                                className="text-green-600 hover:text-green-900"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (rental.billId) {
+                                      setSelectedRentalsForBill([rental])
+                                      setShowBillModal(true)
+                                    }
+                                  }}
+                                  className={`p-1.5 rounded-lg ${rental.billId ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
+                                  title={rental.billId ? 'View Bill' : 'No Bill Available'}
+                                  disabled={!rental.billId}
                               >
-                                <IndianRupee size={14} />
+                                <FileText size={14}/>
                               </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedRentalForBreakdown(rental)
-                                }}
-                                className="text-purple-600 hover:text-purple-900"
-                              >
-                                <BarChart3 size={14} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (rental.billId) {
-                                    setSelectedRentalsForBill([rental])
-                                    setShowBillModal(true)
-                                  }
-                                }}
-                                className={`p-1 rounded ${rental.billId ? 'text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50' : 'text-gray-400 cursor-not-allowed'}`}
-                                title={rental.billId ? 'View Bill' : 'No Bill Available'}
-                                disabled={!rental.billId}
-                              >
-                                <FileText size={14} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  deleteRental(rental.id)
-                                }}
-                                className="text-red-600 hover:text-red-900"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {canEdit && (
+                                  <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        deleteRental(rental.id)
+                                      }}
+                                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
+                                  >
+                                    <Trash2 size={14}/>
+                                  </button>
+                              )}
                             </div>
                           </td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-gray-50">
+                    <tfoot className="bg-slate-50">
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-right font-semibold">Total Rentals:</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-green-600 font-bold text-lg">
+                        <td colSpan={6} className="px-4 py-3 text-right text-sm font-medium text-slate-600">Filtered total</td>
+                        <td className="px-4 py-3 whitespace-nowrap text-emerald-700 font-semibold">
                           {formatCurrency(totalRentalsAmount)}
                         </td>
-                        <td></td>
                         <td></td>
                         <td></td>
                         <td></td>
@@ -1439,25 +1524,25 @@ if (user.role === 'admin') {
                   </table>
                 </div>
                 {filteredRentals.length > 10 && (
-                  <div className="flex items-center justify-between px-6 py-3 bg-white border-t">
-                    <div className="text-sm text-gray-700">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-t border-slate-100">
+                    <div className="text-sm text-slate-600">
                       Showing {Math.min((overviewPage - 1) * 10 + 1, filteredRentals.length)} to {Math.min(overviewPage * 10, filteredRentals.length)} of {filteredRentals.length} rentals
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setOverviewPage(Math.max(1, overviewPage - 1))}
                         disabled={overviewPage === 1}
-                        className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                       >
                         Previous
                       </button>
-                      <span className="text-sm text-gray-700">
+                      <span className="text-sm text-slate-600">
                         Page {overviewPage} of {Math.ceil(filteredRentals.length / 10)}
                       </span>
                       <button
                         onClick={() => setOverviewPage(Math.min(Math.ceil(filteredRentals.length / 10), overviewPage + 1))}
                         disabled={overviewPage === Math.ceil(filteredRentals.length / 10)}
-                        className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                       >
                         Next
                       </button>
@@ -1470,11 +1555,12 @@ if (user.role === 'admin') {
           )}
 
           {adminActiveTab === 'add-expense' && (
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-              <h2 className="text-xl font-semibold mb-4">Add Expense</h2>
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
+              <h2 className="text-lg font-semibold mb-1 text-slate-900">Add Expense</h2>
+              <p className="text-sm text-slate-500 mb-5">Record diesel, maintenance, salary, or other costs.</p>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Description</label>
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Description</label>
                   <input
                     type="text"
                     value={expenseDescription}
@@ -1488,27 +1574,27 @@ if (user.role === 'admin') {
                       }
                     }}
                     placeholder="Enter expense description"
-                    className="w-full p-2 border rounded-lg"
+                    className="dash-input w-full"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Amount</label>
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Amount</label>
                   <input
                     type="number"
                     value={expenseAmount}
                     onChange={(e) => setExpenseAmount(e.target.value)}
                     placeholder="0"
-                    className="w-full p-2 border rounded-lg"
+                    className="dash-input w-full"
                     min="0"
                   />
                 </div>
                 {user.role === 'admin' && (
                   <div>
-                    <label className="block text-sm font-medium mb-2">Operator</label>
+                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Operator</label>
                     <select
                       value={selectedOperatorId || ''}
                       onChange={(e) => setSelectedOperatorId(e.target.value ? parseInt(e.target.value) : null)}
-                      className="w-full p-2 border rounded-lg"
+                      className="dash-input w-full"
                     >
                       <option value="">Select Operator</option>
                       {operators.map((op) => (
@@ -1518,94 +1604,96 @@ if (user.role === 'admin') {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium mb-2">Date</label>
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Date</label>
                   <input
                     type="date"
                     value={expenseDate}
                     onChange={(e) => setExpenseDate(e.target.value)}
-                    className="w-full p-2 border rounded-lg"
+                    className="dash-input w-full"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">Diesel Cost (Optional)</label>
+                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Diesel Cost (Optional)</label>
                     <input
                       type="number"
                       value={expenseDieselCost}
                       onChange={(e) => setExpenseDieselCost(e.target.value)}
                       placeholder="0"
-                      className="w-full p-2 border rounded-lg"
+                      className="dash-input w-full disabled:bg-slate-50 disabled:text-slate-400"
                       min="0"
                       disabled={expenseDescription.trim() !== ''}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Maintenance Cost (Optional)</label>
+                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Maintenance Cost (Optional)</label>
                     <input
                       type="number"
                       value={expenseMaintenanceCost}
                       onChange={(e) => setExpenseMaintenanceCost(e.target.value)}
                       placeholder="0"
-                      className="w-full p-2 border rounded-lg"
+                      className="dash-input w-full disabled:bg-slate-50 disabled:text-slate-400"
                       min="0"
                       disabled={expenseDescription.trim() !== ''}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Operator Salary (Optional)</label>
+                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Operator Salary (Optional)</label>
                     <input
                       type="number"
                       value={expenseOperatorSalary}
                       onChange={(e) => setExpenseOperatorSalary(e.target.value)}
                       placeholder="0"
-                      className="w-full p-2 border rounded-lg"
+                      className="dash-input w-full disabled:bg-slate-50 disabled:text-slate-400"
                       min="0"
                       disabled={expenseDescription.trim() !== ''}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">Driver Drink Cost (Optional)</label>
+                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Driver Drink Cost (Optional)</label>
                     <input
                       type="number"
                       value={expenseDriverDrinkCost}
                       onChange={(e) => setExpenseDriverDrinkCost(e.target.value)}
                       placeholder="0"
-                      className="w-full p-2 border rounded-lg"
+                      className="dash-input w-full disabled:bg-slate-50 disabled:text-slate-400"
                       min="0"
                       disabled={expenseDescription.trim() !== ''}
                     />
                   </div>
                 </div>
+                <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={saveExpense}
                   disabled={loading || (!expenseDescription && !expenseAmount && !expenseDieselCost && !expenseMaintenanceCost && !expenseOperatorSalary && !expenseDriverDrinkCost) || (user.role === 'admin' && !selectedOperatorId)}
-                  className="w-full bg-green-500 text-white p-3 rounded-lg disabled:bg-gray-300"
+                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed font-medium"
                 >
                   {loading ? 'Saving...' : 'Save Expense'}
                 </button>
                 <button
                   onClick={() => setExpenseDescription('jcb ' + expenseDescription)}
-                  className="w-full bg-orange-500 text-white p-3 rounded-lg hover:bg-orange-600"
+                  className="sm:w-auto bg-amber-500 text-white px-4 p-3 rounded-lg hover:bg-amber-600 font-medium"
                 >
                   JCB Expense
                 </button>
+                </div>
               </div>
-              <div className="mt-8">
-                <h3 className="text-lg font-semibold mb-4">Latest Expenses</h3>
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                <h3 className="text-base font-semibold mb-3 text-slate-900">Latest Expenses</h3>
                 <div className="space-y-3">
                   {expenses.length === 0 ? (
-                    <p className="text-gray-500">No expenses recorded yet.</p>
+                    <p className="text-slate-500 text-sm">No expenses recorded yet.</p>
                   ) : (
                     expenses
                       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                       .slice(0, 3)
                       .map((expense) => (
-                        <div key={expense.id} className="p-4 bg-gray-50 rounded-lg">
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="font-medium">{expense.description}</div>
-                            <div className="font-semibold text-red-600">{formatCurrency(expense.amount)}</div>
+                        <div key={expense.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                          <div className="flex justify-between items-start mb-2 gap-3">
+                            <div className="font-medium text-slate-900">{expense.description}</div>
+                            <div className="font-semibold text-rose-700 shrink-0">{formatCurrency(expense.amount)}</div>
                           </div>
-                          <div className="text-sm text-gray-600">
+                          <div className="text-sm text-slate-500">
                             <div>Operator: {expense.operator.name}</div>
                             <div>Date: {new Date(expense.date).toLocaleDateString()}</div>
                           </div>
@@ -1618,50 +1706,51 @@ if (user.role === 'admin') {
           )}
 
           {adminActiveTab === 'expenses' && (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="p-6 border-b">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold">All Expenses</h2>
-                  <div className="text-xl font-bold text-red-600">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-100">
+                <div className="flex justify-between items-center mb-4 gap-3">
+                  <h2 className="text-lg font-semibold text-slate-900">All Expenses</h2>
+                  <div className="text-sm sm:text-base font-semibold text-rose-700">
                     Total: {formatCurrency(totalExpenses)}
                   </div>
                 </div>
-                <div className="flex gap-4 flex-wrap items-center">
+                <div className="flex gap-2 flex-wrap items-center">
                   <button
                     onClick={() => {
                       fetchRentals()
                       fetchCustomers()
                       fetchExpenses()
                     }}
-                    className="flex items-center gap-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800"
                   >
                     <RefreshCw size={16} />
                     Refresh
                   </button>
                   <button
                     onClick={exportExpensesToCSV}
-                    className="flex items-center gap-2 px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 whitespace-nowrap"
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 whitespace-nowrap"
                   >
-                    Export to CSV
+                    <Download size={16} />
+                    Export CSV
                   </button>
                   <input
                     type="date"
                     value={expenseFilter.dateFrom}
                     onChange={(e) => setExpenseFilter({...expenseFilter, dateFrom: e.target.value})}
-                    className="px-3 py-1 border rounded text-sm"
+                    className="dash-input"
                     placeholder="From Date"
                   />
                   <input
                     type="date"
                     value={expenseFilter.dateTo}
                     onChange={(e) => setExpenseFilter({...expenseFilter, dateTo: e.target.value})}
-                    className="px-3 py-1 border rounded text-sm"
+                    className="dash-input"
                     placeholder="To Date"
                   />
                   <select
                     value={expenseFilter.category}
                     onChange={(e) => setExpenseFilter({...expenseFilter, category: e.target.value})}
-                    className="px-3 py-1 border rounded text-sm"
+                    className="dash-input"
                   >
                     <option value="">All Categories</option>
                     <option value="Diesel">Diesel</option>
@@ -1673,14 +1762,14 @@ if (user.role === 'admin') {
                   <select
                     value={expenseFilter.operator}
                     onChange={(e) => setExpenseFilter({...expenseFilter, operator: e.target.value})}
-                    className="px-3 py-1 border rounded text-sm"
+                    className="dash-input"
                   >
                     <option value="">All Operators</option>
                     {Array.from(new Set(expenses.map(e => e.operator.name))).map(operator => (
                       <option key={operator} value={operator}>{operator}</option>
                     ))}
                   </select>
-                  <label className="flex items-center gap-2 px-3 py-1 border rounded text-sm cursor-pointer">
+                  <label className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm cursor-pointer bg-white">
                     <input
                       type="checkbox"
                       checked={expenseFilter.jcbFilter}
@@ -1693,51 +1782,55 @@ if (user.role === 'admin') {
               </div>
               <div className="overflow-x-auto lg:overflow-x-visible">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Operator</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Description</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Category</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-slate-100">
                     {filteredExpenses.slice((expensesPage - 1) * 10, expensesPage * 10).map((expense) => (
-                      <tr key={expense.id}>
-                        <td className="px-6 py-4 whitespace-nowrap">{expense.description}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{getExpenseCategory(expense)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">{expense.operator.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-red-600 font-semibold">
+                      <tr key={expense.id} className="hover:bg-slate-50/80">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm">{expense.description}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm">
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700">{getExpenseCategory(expense)}</span>
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm">{expense.operator.name}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-rose-700 font-semibold">
                           {formatCurrency(expense.amount)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
                           {formatDateDDMMYYYY(expense.date)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => startEditExpense(expense)}
-                              className="text-blue-600 hover:text-blue-900"
-                            >
-                              <Edit size={16} />
-                            </button>
-                            <button
-                              onClick={() => deleteExpense(expense.id)}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {canEdit && (
+                              <div className="flex gap-1">
+                                <button
+                                    onClick={() => startEditExpense(expense)}
+                                    className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                                >
+                                  <Edit size={16}/>
+                                </button>
+                                <button
+                                    onClick={() => deleteExpense(expense.id)}
+                                    className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
+                                >
+                                  <Trash2 size={16}/>
+                                </button>
+                              </div>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot className="bg-gray-50">
+                  <tfoot className="bg-slate-50">
                     <tr>
-                      <td colSpan={3} className="px-6 py-4 text-right font-semibold">Total Expenses:</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-red-600 font-bold text-lg">
+                      <td colSpan={3} className="px-3 py-3 text-right text-sm font-medium text-slate-600">Total Expenses</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-rose-700 font-semibold">
                         {formatCurrency(totalExpenses)}
                       </td>
                       <td></td>
@@ -1747,25 +1840,25 @@ if (user.role === 'admin') {
                 </table>
               </div>
               {filteredExpenses.length > 10 && (
-                <div className="flex items-center justify-between px-6 py-3 bg-white border-t">
-                  <div className="text-sm text-gray-700">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-t border-slate-100">
+                  <div className="text-sm text-slate-600">
                     Showing {Math.min((expensesPage - 1) * 10 + 1, filteredExpenses.length)} to {Math.min(expensesPage * 10, filteredExpenses.length)} of {filteredExpenses.length} expenses
                   </div>
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={() => setExpensesPage(Math.max(1, expensesPage - 1))}
                       disabled={expensesPage === 1}
-                      className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                      className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                     >
                       Previous
                     </button>
-                    <span className="text-sm text-gray-700">
+                    <span className="text-sm text-slate-600">
                       Page {expensesPage} of {Math.ceil(filteredExpenses.length / 10)}
                     </span>
                     <button
                       onClick={() => setExpensesPage(Math.min(Math.ceil(filteredExpenses.length / 10), expensesPage + 1))}
                       disabled={expensesPage === Math.ceil(filteredExpenses.length / 10)}
-                      className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                      className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                     >
                       Next
                     </button>
@@ -1776,104 +1869,97 @@ if (user.role === 'admin') {
           )}
 
           {adminActiveTab === 'customers' && (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="p-6 border-b">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold">All Customers</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-100">
+                <div className="flex justify-between items-center mb-4 gap-3">
+                  <h2 className="text-lg font-semibold text-slate-900">All Customers</h2>
                   <button
                     onClick={() => {
                       fetchRentals()
                       fetchCustomers()
                       fetchExpenses()
                     }}
-                    className="flex items-center gap-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800"
                   >
                     <RefreshCw size={16} />
                     Refresh
                   </button>
                 </div>
-                <div className="flex gap-4 flex-wrap items-center">
+                <div className="flex gap-2 flex-wrap items-center">
                   <input
                     type="text"
                     value={customerFilter.contactNumber}
                     onChange={(e) => setCustomerFilter({...customerFilter, contactNumber: e.target.value})}
                     placeholder="Contact Number"
-                    className="px-3 py-1 border rounded text-sm"
+                    className="dash-input w-full sm:w-auto"
                   />
                 </div>
               </div>
               <div className="overflow-x-auto lg:overflow-hidden">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact Number</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Rentals</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Rental Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Name</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contact Number</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Address</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Revenue</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Rentals</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Last Rental Date</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-slate-100">
                     {filteredCustomers.slice((customersPage - 1) * 10, customersPage * 10).map((customer) => (
-                      <tr key={customer.id} onClick={() => setSelectedCustomer(customer)} className="cursor-pointer hover:bg-gray-50">
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap truncate" title={customer.name}>{customer.name}</td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap" title={customer.contactNumber}>{customer.contactNumber}</td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap truncate" title={customer.address || 'N/A'}>{customer.address || 'N/A'}</td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap text-green-600 font-semibold">
+                      <tr key={customer.id} onClick={() => setSelectedCustomer(customer)} className="cursor-pointer hover:bg-slate-50/80">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[10rem]" title={customer.name}>{customer.name}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm" title={customer.contactNumber}>{customer.contactNumber}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[12rem] text-slate-600" title={customer.address || 'N/A'}>{customer.address || 'N/A'}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-emerald-700 font-semibold">
                           {formatCurrency(customer.totalRevenue)}
                         </td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">{customer.totalRentals}</td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm">{customer.totalRentals}</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
                           {customer.lastRentalDate ? new Date(customer.lastRentalDate).toLocaleDateString() : 'N/A'}
                         </td>
-                        <td className="px-2 sm:px-6 py-4 whitespace-nowrap">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                startEditCustomer(customer)
-                              }}
-                              className="text-blue-600 hover:text-blue-900"
-                            >
-                              <Edit size={16} />
-                            </button>
-                            {/* <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                deleteCustomer(customer.id)
-                              }}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <Trash2 size={16} />
-                            </button> */}
-                          </div>
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {canEdit && (
+                              <div className="flex gap-1">
+                                <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      startEditCustomer(customer)
+                                    }}
+                                    className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                                >
+                                  <Edit size={16}/>
+                                </button>
+                              </div>
+                          )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 {customers.length > 10 && (
-                  <div className="flex items-center justify-between px-6 py-3 bg-white border-t">
-                    <div className="text-sm text-gray-700">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-t border-slate-100">
+                    <div className="text-sm text-slate-600">
                       Showing {Math.min((customersPage - 1) * 10 + 1, customers.length)} to {Math.min(customersPage * 10, customers.length)} of {customers.length} customers
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setCustomersPage(Math.max(1, customersPage - 1))}
                         disabled={customersPage === 1}
-                        className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                       >
                         Previous
                       </button>
-                      <span className="text-sm text-gray-700">
+                      <span className="text-sm text-slate-600">
                         Page {customersPage} of {Math.ceil(customers.length / 10)}
                       </span>
                       <button
                         onClick={() => setCustomersPage(Math.min(Math.ceil(customers.length / 10), customersPage + 1))}
                         disabled={customersPage === Math.ceil(customers.length / 10)}
-                        className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+                        className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                       >
                         Next
                       </button>
@@ -1885,15 +1971,15 @@ if (user.role === 'admin') {
           )}
 
           {adminActiveTab === 'bills' && (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <div className="p-6 border-b">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold">All Bills</h2>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-slate-100">
+                <div className="flex justify-between items-center mb-4 gap-3">
+                  <h2 className="text-lg font-semibold text-slate-900">All Bills</h2>
                   <button
                     onClick={() => {
                       fetchBills()
                     }}
-                    className="flex items-center gap-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-800"
                   >
                     <RefreshCw size={16} />
                     Refresh
@@ -1902,60 +1988,60 @@ if (user.role === 'admin') {
               </div>
               <div className="overflow-x-auto lg:overflow-x-visible">
                 <table className="w-full">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bill Number</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Contact</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paid Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Due Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Bill Number</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Amount</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Paid Amount</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Due Date</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Created</th>
+                      <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white divide-y divide-slate-100">
                     {bills.map((bill) => (
-                      <tr key={bill.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap font-medium text-blue-600">
+                      <tr key={bill.id} className="hover:bg-slate-50/80">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-medium text-blue-700">
                           {bill.billNumber}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap truncate" title={bill.customer.name}>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[10rem]" title={bill.customer.name}>
                           {bill.customer.name}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm">
                           {bill.customer.contactNumber}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-green-600 font-semibold">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-emerald-700 font-semibold">
                           {formatCurrency(bill.totalAmount)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-blue-600 font-semibold">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-blue-700 font-semibold">
                           {formatCurrency(bill.paidAmount)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                            bill.status === 'PAID' ? 'bg-green-100 text-green-800' :
-                            bill.status === 'PARTIALLY_PAID' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                            bill.status === 'PAID' ? 'bg-emerald-50 text-emerald-700' :
+                            bill.status === 'PARTIALLY_PAID' ? 'bg-amber-50 text-amber-700' :
+                            'bg-rose-50 text-rose-700'
                           }`}>
                             {bill.status}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
                           {bill.dueDate ? formatDateDDMMYYYY(bill.dueDate) : 'N/A'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-500">
                           {formatDateDDMMYYYY(bill.createdAt)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex gap-2">
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <div className="flex gap-1">
                             <button
                               onClick={() => {
                                 setSelectedRentalsForBill(bill.rentals)
                                 setShowBillModal(true)
                               }}
-                              className="text-indigo-600 hover:text-indigo-900"
+                              className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50"
                               title="View Bill"
                             >
                               <FileText size={16} />
@@ -1967,8 +2053,8 @@ if (user.role === 'admin') {
                   </tbody>
                 </table>
                 {bills.length === 0 && (
-                  <div className="px-6 py-8 text-center">
-                    <p className="text-gray-500">No bills found. Create bills from rentals to see them here.</p>
+                  <div className="px-6 py-10 text-center">
+                    <p className="text-slate-500 text-sm">No bills found. Create bills from rentals to see them here.</p>
                   </div>
                 )}
               </div>
@@ -2732,66 +2818,59 @@ if (user.role === 'admin') {
   )
 }
 
+  const glassLabel = 'block text-sm font-medium mb-2 text-gray-800'
+  const requiredMark = <span className="text-red-500 ml-0.5">*</span>
+  const machineIcon = (id: string) => {
+    if (id === 'harvester') return <Leaf size={22} />
+    if (id === 'excavator') return <Wrench size={22} />
+    return <Truck size={22} />
+  }
+
   // Operator view
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
-      <div className="max-w-2xl mx-auto">
-        <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="mx-auto mb-4 w-32 h-auto" />
-        <div className="flex flex-row justify-between items-center mb-6 gap-2">
-          <h1 className="text-2xl font-bold">Welcome, {user.name}</h1>
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden text-gray-900 bg-white">
+      <div className="relative w-full max-w-2xl mx-auto px-3 sm:px-4 pt-4 pb-40">
+        <div className="glass-panel rounded-2xl p-3 sm:p-4 mb-4 flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="w-12 h-12 object-contain shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">Operator</p>
+              <h1 className="text-lg font-bold truncate">Hi, {user.name}</h1>
+            </div>
+          </div>
           <button
             onClick={() => setUser(null)}
-            className="bg-red-500 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center"
+            className="shrink-0 flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white px-2.5 py-2 rounded-xl text-sm"
           >
             <LogOut size={16} />
+            Logout
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-1 mb-6">
-          <button
-            onClick={() => setActiveTab('new-rental')}
-            className={`px-2 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base ${
-              activeTab === 'new-rental'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            New Rental
-          </button>
-          <button
-            onClick={() => setActiveTab('expenses')}
-            className={`px-2 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base ${
-              activeTab === 'expenses'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            All Expenses
-          </button>
-          <button
-            onClick={() => setActiveTab('rentals')}
-            className={`px-2 sm:px-4 py-2 rounded-lg font-medium text-sm sm:text-base ${
-              activeTab === 'rentals'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            Rentals
-          </button>
-        </div>
+        {successMessage && (
+          <div className="mb-4 glass-panel rounded-xl px-4 py-3 flex items-center gap-2 text-emerald-700">
+            <CheckCircle2 size={18} />
+            {successMessage}
+          </div>
+        )}
+        {error && (
+          <div className="mb-4 glass-panel rounded-xl px-4 py-3 text-red-600">{error}</div>
+        )}
 
         {activeTab === 'new-rental' && (
           <>
-            <div className="bg-white p-6 rounded-lg shadow mb-6">
-            <h2 className="text-xl font-semibold mb-4">Add New Rental</h2>
+            <div className="glass-panel rounded-2xl p-3 sm:p-6 mb-4 overflow-hidden">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+              <Plus size={20} /> Add New Rental
+            </h2>
 
             {/* Customer Selection */}
-            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-3">Customer Information</h3>
+            <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-gray-50 border border-gray-200 min-w-0">
+              <h3 className="text-lg font-medium mb-3 flex items-center gap-2"><User size={18} /> Customer Information</h3>
               <div className="grid grid-cols-1 gap-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
-                    <label className="block text-sm font-medium mb-2">Customer Name</label>
+                    <label className={glassLabel}>Customer Name{requiredMark}</label>
                     <input
                       type="text"
                       value={customerName}
@@ -2803,11 +2882,11 @@ if (user.role === 'admin') {
                       onFocus={() => setShowCustomerDropdown(true)}
                       onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
                       placeholder="Enter customer name"
-                      className="w-full p-2 border rounded-lg"
+                      className="glass-input"
                       required
                     />
                     {showCustomerDropdown && (
-                      <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      <div className="absolute z-10 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-40 overflow-y-auto mt-1">
                         {(customers || [])
                           .filter(customer =>
                             customer && (
@@ -2819,7 +2898,8 @@ if (user.role === 'admin') {
                           .map((customer) => (
                             <div
                               key={customer.id}
-                              className="p-2 hover:bg-gray-100 cursor-pointer"
+                              className="p-3 hover:bg-gray-100 cursor-pointer"
+                              onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 setCustomerName(customer.name)
                                 setCustomerSearch(customer.name)
@@ -2837,9 +2917,10 @@ if (user.role === 'admin') {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2 flex items-center gap-2"><Phone size={16} /> Contact Number</label>
+                    <label className={`${glassLabel} flex items-center gap-2`}><Phone size={16} /> Contact Number{requiredMark}</label>
                     <input
                       type="tel"
+                      inputMode="numeric"
                       value={customerContact}
                       onChange={(e) => {
                         const contact = e.target.value
@@ -2853,59 +2934,57 @@ if (user.role === 'admin') {
                         }
                       }}
                       placeholder="Enter contact number"
-                      className="w-full p-2 border rounded-lg"
+                      className="glass-input"
                       required
                     />
-                    {mobileError && <p className="text-red-500 text-sm mt-1">{mobileError}</p>}
+                    {mobileError && <p className="text-red-300 text-sm mt-1">{mobileError}</p>}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Address / Location</label>
+                  <label className={`${glassLabel} flex items-center gap-2`}><MapPin size={16} /> Address / Location{requiredMark}</label>
                   <input
                     type="text"
                     value={customerAddress}
                     onChange={(e) => setCustomerAddress(e.target.value)}
                     placeholder="Enter customer address or work location"
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input"
                     required
                   />
                 </div>
               </div>
             </div>
 
-            {/* Description */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Nature of Work / Description</label>
+              <label className={glassLabel}>Nature of Work / Description</label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description of the work"
-                className="w-full p-2 border rounded-lg"
+                className="glass-input"
               />
             </div>
 
-            {/* Advance Amount */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Advance Amount (Optional)</label>
+              <label className={`${glassLabel} flex items-center gap-2`}><IndianRupee size={16} /> Advance Amount (Optional)</label>
               <input
                 type="number"
+                inputMode="decimal"
                 value={advanceAmount}
                 onChange={(e) => setAdvanceAmount(e.target.value)}
                 placeholder="0"
-                className="w-full p-2 border rounded-lg"
+                className="glass-input"
                 min="0"
                 step="0.01"
               />
             </div>
 
-            {/* Payment Mode */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Payment Mode</label>
+              <label className={`${glassLabel} flex items-center gap-2`}><CreditCard size={16} /> Payment Mode</label>
               <select
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value)}
-                className="w-full p-2 border rounded-lg"
+                className="glass-input"
               >
                 <option value="Cash">Cash</option>
                 <option value="Online">Online</option>
@@ -2914,14 +2993,13 @@ if (user.role === 'admin') {
               </select>
             </div>
 
-            {/* Date of Rental */}
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">Date of Rental</label>
+              <label className={`${glassLabel} flex items-center gap-2`}><Calendar size={16} /> Date of Rental{requiredMark}</label>
               <input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full p-2 border rounded-lg"
+                className="glass-input"
                 required
               />
             </div>
@@ -2969,7 +3047,8 @@ if (user.role === 'admin') {
               </div>
             </div> */}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <p className={`${glassLabel} mb-2`}>Machine{requiredMark}</p>
+            <div className="grid grid-cols-3 gap-2 mb-4 min-w-0">
               {MACHINES.map((machine) => (
                 <button
                   key={machine.id}
@@ -2979,36 +3058,36 @@ if (user.role === 'admin') {
                       setSelectedUnit('acre');
                     }
                   }}
-                  className={`p-4 rounded-lg border-2 transition-colors ${
+                  className={`p-2 sm:p-3 min-h-[80px] min-w-0 rounded-2xl border transition-colors ${
                     selectedMachine === machine.id
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200 bg-gray-50'
                   }`}
                 >
-                  <div className={`w-8 h-8 mx-auto mb-2 rounded flex items-center justify-center font-bold text-white text-lg ${
-                    machine.id === 'harvester' ? 'bg-green-500' :
-                    machine.id === 'excavator' ? 'bg-orange-500' :
-                    'bg-blue-500'
+                  <div className={`w-9 h-9 mx-auto mb-2 rounded-xl flex items-center justify-center text-white ${
+                    machine.id === 'harvester' ? 'bg-green-500/90' :
+                    machine.id === 'excavator' ? 'bg-orange-500/90' :
+                    'bg-blue-500/90'
                   }`}>
-                    {machine.name.charAt(0)}
+                    {machineIcon(machine.id)}
                   </div>
-                  <div className="font-medium">{machine.name}</div>
+                  <div className="font-medium text-[11px] sm:text-sm leading-tight break-words">{machine.name}</div>
                 </button>
               ))}
             </div>
 
             {selectedMachine && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Unit Type</label>
-                <div className="grid grid-cols-3 gap-2">
+              <div className="mb-4 min-w-0">
+                <label className={glassLabel}>Unit Type{requiredMark}</label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 min-w-0">
                   {MACHINES.find(m => m.id === selectedMachine)?.units.map((unit) => (
                     <button
                       key={unit}
                       onClick={() => setSelectedUnit(unit)}
-                      className={`p-2 rounded border capitalize ${
+                      className={`p-2 sm:p-3 min-h-[44px] min-w-0 rounded-xl capitalize text-sm ${
                         selectedUnit === unit
                           ? 'bg-blue-500 text-white'
-                          : 'bg-gray-100 hover:bg-gray-200'
+                          : 'bg-gray-100 text-gray-800'
                       }`}
                     >
                       {unit}
@@ -3020,11 +3099,11 @@ if (user.role === 'admin') {
 
             {selectedMachine && selectedUnit && (selectedUnit !== 'monthly' && selectedUnit !== 'work') && (
               <div className="mb-4">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex flex-wrap justify-between items-center gap-2 mb-2 min-w-0">
                   <h3 className="text-lg font-medium">Edit Rates</h3>
-                  <button
+                    <button
                     onClick={() => setShowEditRates(!showEditRates)}
-                    className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+                    className="bg-blue-500 text-white px-3 py-2 rounded-xl text-sm shrink-0"
                   >
                     {showEditRates ? 'Cancel' : 'Edit Rates'}
                   </button>
@@ -3032,9 +3111,9 @@ if (user.role === 'admin') {
                 {showEditRates && (
                   <div className="space-y-4">
                     {MACHINES.filter(machine => !selectedMachine || machine.id === selectedMachine).map((machine) => (
-                      <div key={machine.id} className="border rounded-lg p-4">
+                      <div key={machine.id} className="rounded-xl p-4 bg-gray-50 border border-gray-200">
                         <h4 className="font-medium mb-2 capitalize">{machine.name} Rates</h4>
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           {machine.units.filter(unit => (!selectedUnit || unit === selectedUnit) && !(machine.id === 'excavator' && unit === 'hourly')).map((unit) => (
                             <div key={unit}>
                               <label className="block text-sm font-medium mb-1 capitalize">{unit}</label>
@@ -3050,7 +3129,7 @@ if (user.role === 'admin') {
                                   }
                                   setPrices(newPrices)
                                 }}
-                                className="w-full p-2 border rounded"
+                                className="glass-input"
                                 min="0"
                               />
                             </div>
@@ -3074,7 +3153,7 @@ if (user.role === 'admin') {
                                     }))
                                     setTimeSlots(newSlots)
                                   }}
-                                  className="w-full p-2 border rounded"
+                                  className="glass-input"
                                   min="0"
                                   placeholder="Normal rate"
                                 />
@@ -3093,7 +3172,7 @@ if (user.role === 'admin') {
                                     }))
                                     setTimeSlots(newSlots)
                                   }}
-                                  className="w-full p-2 border rounded"
+                                  className="glass-input"
                                   min="0"
                                   placeholder="Breaker rate"
                                 />
@@ -3110,16 +3189,17 @@ if (user.role === 'admin') {
 
             {selectedUnit && (
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">
-                  {selectedUnit === 'hourly' ? 'Time Selection' : (selectedUnit === 'monthly' || selectedUnit === 'work') ? 'Amount' : 'Quantity'}
+                <label className={glassLabel}>
+                  {selectedUnit === 'hourly' ? 'Time Selection' : (selectedUnit === 'monthly' || selectedUnit === 'work') ? 'Amount' : 'Quantity'}{requiredMark}
                 </label>
                 {(selectedUnit === 'monthly' || selectedUnit === 'work') ? (
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="Enter amount"
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input"
                   />
                 ) : (selectedUnit === 'acre' || selectedUnit === 'guntha') ? (
                   <input
@@ -3131,12 +3211,12 @@ if (user.role === 'admin') {
                       setQuantity(parsed);
                     }}
                     placeholder={`Enter quantity (e.g., 1.45 or 2 acre 35 guntha)`}
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input"
                   />
                 ) : selectedUnit === 'hourly' ? (
                   <div>
                     {timeSlots.map((slot, index) => (
-                      <div key={index} className="border rounded-lg p-3 mb-2 bg-gray-50">
+                      <div key={index} className="rounded-2xl p-3 mb-2 bg-gray-50 border border-gray-200">
                         <div className="space-y-4 mb-2">
                           <div>
                             <div className="flex items-center justify-between mb-2">
@@ -3153,7 +3233,7 @@ if (user.role === 'admin') {
                               type="time"
                               value={slot.start}
                               onChange={(e) => updateTimeSlot(index, 'start', e.target.value)}
-                              className="w-full p-4 border rounded-lg text-xl"
+                              className="glass-input text-xl"
                             />
                           </div>
                           <div>
@@ -3171,30 +3251,30 @@ if (user.role === 'admin') {
                               type="time"
                               value={slot.end}
                               onChange={(e) => updateTimeSlot(index, 'end', e.target.value)}
-                              className="w-full p-4 border rounded-lg text-xl"
+                              className="glass-input text-xl"
                             />
                           </div>
                         </div>
-                        <div className="text-lg sm:text-xl font-bold text-blue-800 text-center">
+                        <div className="text-lg sm:text-xl font-bold text-blue-700 text-center">
                           {calculateHours(slot.start, slot.end).toFixed(2)} hrs
                         </div>
-                        <div className="flex justify-center gap-2 mt-2">
+                        <div className="grid grid-cols-2 gap-2 mt-2">
                           <button
                             onClick={() => updateTimeSlotType(index, false)}
-                            className={`px-3 py-1 rounded text-sm font-medium ${
+                            className={`px-3 py-3 rounded-xl text-sm font-medium ${
                               !slot.isBreaker
                                 ? 'bg-blue-500 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             Normal
                           </button>
                           <button
                             onClick={() => updateTimeSlotType(index, true)}
-                            className={`px-3 py-1 rounded text-sm font-medium ${
+                            className={`px-3 py-3 rounded-xl text-sm font-medium ${
                               slot.isBreaker
                                 ? 'bg-orange-500 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                : 'bg-gray-100 text-gray-700'
                             }`}
                           >
                             Breaker
@@ -3202,10 +3282,10 @@ if (user.role === 'admin') {
                           {timeSlots.length > 1 && (
                             <button
                               onClick={() => removeTimeSlot(index)}
-                              className="bg-red-500 text-white px-3 py-1 rounded text-sm font-medium hover:bg-red-600"
+                              className="col-span-2 bg-red-500/80 text-white px-3 py-2 rounded-xl text-sm font-medium"
                               title="Remove time slot"
                             >
-                              ×
+                              Remove slot
                             </button>
                           )}
                         </div>
@@ -3214,37 +3294,37 @@ if (user.role === 'admin') {
                     <div className="space-y-2">
                       {selectedMachine === 'excavator' && selectedUnit === 'hourly' ? (
                         <>
-                          <div className="text-lg font-semibold text-center p-2 bg-blue-50 rounded-lg">
+                          <div className="text-lg font-semibold text-center p-2 rounded-xl bg-blue-50">
                             JCB Hours: {timeSlots.filter(s => !s.isBreaker).reduce((sum, s) => sum + calculateHours(s.start, s.end), 0).toFixed(2)} hrs
                           </div>
-                          <div className="text-lg font-semibold text-center p-2 bg-orange-50 rounded-lg">
+                          <div className="text-lg font-semibold text-center p-2 rounded-xl bg-orange-50">
                             Breaker Hours: {timeSlots.filter(s => s.isBreaker).reduce((sum, s) => sum + calculateHours(s.start, s.end), 0).toFixed(2)} hrs
                           </div>
-                          <div className="text-lg font-semibold text-center p-2 bg-blue-50 rounded-lg">
+                          <div className="text-lg font-semibold text-center p-2 rounded-xl bg-blue-50">
                             Total Hours: {quantity.toFixed(2)} hrs
                           </div>
                         </>
                       ) : (
-                        <div className="text-lg font-semibold text-center p-2 bg-blue-50 rounded-lg">
+                        <div className="text-lg font-semibold text-center p-2 rounded-xl bg-blue-50">
                           Total Hours: {quantity.toFixed(2)} hrs
                         </div>
                       )}
-                      <div className="text-lg font-semibold text-center p-2 bg-green-50 rounded-lg">
+                      <div className="text-lg font-semibold text-center p-2 rounded-xl bg-green-50">
                         Total Amount: {selectedMachine === 'excavator' && selectedUnit === 'hourly' ? formatCurrency(timeSlots.reduce((sum, slot) => sum + slot.calculatedAmount, 0)) : formatCurrency(quantity * prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]])}
                       </div>
                     </div>
                     <button
                       onClick={addTimeSlot}
-                      className="bg-blue-500 text-white px-3 py-2 rounded text-sm mt-2"
+                      className="w-full bg-blue-500 text-white px-3 py-3 rounded-xl text-sm mt-2"
                     >
                       Add Time Slot
                     </button>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-center gap-3 w-full min-w-0">
                     <button
                       onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                      className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center"
+                      className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center"
                     >
                       <Minus size={20} />
                     </button>
@@ -3253,7 +3333,7 @@ if (user.role === 'admin') {
                         type="number"
                         value={quantity}
                         onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                        className="w-16 p-2 border rounded-lg text-center text-2xl font-bold"
+                        className="w-16 p-2 glass-input text-center text-2xl font-bold"
                         min="1"
                       />
                     ) : (
@@ -3261,7 +3341,7 @@ if (user.role === 'admin') {
                     )}
                     <button
                       onClick={() => setQuantity(quantity + 1)}
-                      className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center"
+                      className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center"
                     >
                       <Plus size={20} />
                     </button>
@@ -3272,7 +3352,7 @@ if (user.role === 'admin') {
             )}
 
             {selectedMachine && selectedUnit && !(selectedMachine === 'excavator' && selectedUnit === 'hourly') && (
-              <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+              <div className="mb-4 p-4 rounded-2xl bg-gray-50 border border-gray-200">
                 {selectedUnit !== 'monthly' && selectedUnit !== 'work' && (
                   <div className="flex justify-between items-center">
                     <span>Rate per {selectedUnit}:</span>
@@ -3310,24 +3390,21 @@ if (user.role === 'admin') {
             <button
               onClick={createRental}
               disabled={!selectedMachine || !selectedUnit || !customerName || !customerContact || !customerAddress || loading}
-              className="w-full bg-green-500 text-white p-3 rounded-lg disabled:bg-gray-300"
+              className="hidden"
             >
               {loading ? 'Adding...' : 'Add Rental Entry'}
             </button>
-
-            {error && <p className="text-red-500 mt-2">{error}</p>}
           </div>
 
-          {/* Recent Rentals */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h3 className="text-lg font-semibold mb-4">Your Last 3 Rentals</h3>
+          <div className="glass-panel rounded-2xl p-4 sm:p-6">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2"><Receipt size={18} /> Your Last 3 Rentals</h3>
             <div className="space-y-3">
               {rentals
                 .filter(r => r.operator.name === user.name)
                 .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                 .slice(0, 3)
                 .map((rental) => (
-                  <div key={rental.id} className="p-4 bg-gray-50 rounded-lg">
+                  <div key={rental.id} className="p-4 rounded-xl bg-gray-50 border border-gray-200">
                     <div className="flex justify-between items-start mb-2">
                       <div className="font-medium capitalize">{rental.machineType}</div>
                       <div className="font-semibold text-green-600">{formatCurrency(rental.totalAmount)}</div>
@@ -3338,7 +3415,7 @@ if (user.role === 'admin') {
                       <div>Date: {new Date(rental.date).toLocaleDateString()}</div>
                       <div>Quantity: {rental.quantity} {rental.unitType}</div>
                       {rental.description && <div>Description: {rental.description}</div>}
-                      <div className="flex justify-between pt-2 border-t">
+                      <div className="flex flex-wrap justify-between gap-1 pt-2 border-t border-gray-200">
                         <span>Paid: <span className="text-green-600 font-medium">{formatCurrency(rental.paidAmount || 0)}</span></span>
                         <span>Pending: <span className="text-red-600 font-medium">{formatCurrency(rental.totalAmount - (rental.paidAmount || 0))}</span></span>
                       </div>
@@ -3355,11 +3432,11 @@ if (user.role === 'admin') {
         )}
 
         {activeTab === 'expenses' && (
-          <div className="bg-white p-6 rounded-lg shadow mb-6">
-            <h2 className="text-xl font-semibold mb-4">Add Expense</h2>
+          <div className="glass-panel rounded-2xl p-3 sm:p-6 mb-4 overflow-hidden min-w-0">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2"><Wallet size={20} /> Add Expense</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">Description</label>
+                <label className={glassLabel}>Description</label>
                 <input
                   type="text"
                   value={expenseDescription}
@@ -3373,26 +3450,27 @@ if (user.role === 'admin') {
                     }
                   }}
                   placeholder="Enter expense description"
-                  className="w-full p-2 border rounded-lg"
+                  className="glass-input"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Amount</label>
+                <label className={glassLabel}>Amount{requiredMark}</label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   value={expenseAmount}
                   onChange={(e) => setExpenseAmount(e.target.value)}
                   placeholder="0"
-                  className="w-full p-2 border rounded-lg"
+                  className="glass-input"
                   min="0"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Operator</label>
+                <label className={`${glassLabel} flex items-center gap-2`}><User size={16} /> Operator{requiredMark}</label>
                 <select
                   value={selectedOperatorId || ''}
                   onChange={(e) => setSelectedOperatorId(e.target.value ? parseInt(e.target.value) : null)}
-                  className="w-full p-2 border rounded-lg"
+                  className="glass-input"
                 >
                   <option value="">Select Operator</option>
                   {operators.map((operator) => (
@@ -3401,47 +3479,50 @@ if (user.role === 'admin') {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Date</label>
+                <label className={`${glassLabel} flex items-center gap-2`}><Calendar size={16} /> Date</label>
                 <input
                   type="date"
                   value={expenseDate}
                   onChange={(e) => setExpenseDate(e.target.value)}
-                  className="w-full p-2 border rounded-lg"
+                  className="glass-input"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Diesel Cost (Optional)</label>
+                  <label className={`${glassLabel} flex items-center gap-2`}><Fuel size={16} /> Diesel Cost (Optional)</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={expenseDieselCost}
                     onChange={(e) => setExpenseDieselCost(e.target.value)}
                     placeholder="0"
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input disabled:opacity-50"
                     min="0"
                     disabled={expenseDescription.trim() !== ''}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Maintenance Cost (Optional)</label>
+                  <label className={`${glassLabel} flex items-center gap-2`}><Wrench size={16} /> Maintenance Cost (Optional)</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={expenseMaintenanceCost}
                     onChange={(e) => setExpenseMaintenanceCost(e.target.value)}
                     placeholder="0"
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input disabled:opacity-50"
                     min="0"
                     disabled={expenseDescription.trim() !== ''}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-2">Operator Salary (Optional)</label>
+                  <label className={glassLabel}>Operator Salary (Optional)</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     value={expenseOperatorSalary}
                     onChange={(e) => setExpenseOperatorSalary(e.target.value)}
                     placeholder="0"
-                    className="w-full p-2 border rounded-lg"
+                    className="glass-input disabled:opacity-50"
                     min="0"
                     disabled={expenseDescription.trim() !== ''}
                   />
@@ -3450,7 +3531,7 @@ if (user.role === 'admin') {
               <button
                 onClick={saveExpense}
                 disabled={loading || (!selectedOperatorId) || (!expenseDescription && !expenseAmount && !expenseDieselCost && !expenseMaintenanceCost && !expenseOperatorSalary)}
-                className="w-full bg-green-500 text-white p-3 rounded-lg disabled:bg-gray-300"
+                className="w-full bg-green-500 text-white p-3 rounded-xl disabled:bg-gray-300 min-h-[48px]"
               >
                 {loading ? 'Saving...' : 'Save Expense'}
               </button>
@@ -3465,7 +3546,7 @@ if (user.role === 'admin') {
                     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                     .slice(0, 3)
                     .map((expense) => (
-                      <div key={expense.id} className="p-4 bg-gray-50 rounded-lg">
+                      <div key={expense.id} className="p-4 rounded-xl bg-gray-50 border border-gray-200">
                        <div className="flex justify-between items-start mb-2">
                           <div className="font-medium">{expense.description}</div>
                           <div className="font-semibold text-red-600">{formatCurrency(expense.amount)}</div>
@@ -3483,14 +3564,22 @@ if (user.role === 'admin') {
         )}
 
         {activeTab === 'rentals' && (
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">Your Recent Rentals</h2>
+          <div className="glass-panel rounded-2xl p-4 sm:p-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2"><Clock size={20} /> Your Recent Rentals</h2>
+            <input
+              type="text"
+              value={operatorRentalSearch}
+              onChange={(e) => setOperatorRentalSearch(e.target.value)}
+              placeholder="Search customer name"
+              className="glass-input mb-4"
+            />
             <div className="space-y-3">
               {rentals
                 .filter(r => r.operator.name === user.name)
-                .slice(0, 5)
+                .filter(r => !operatorRentalSearch || r.customer.name.toLowerCase().includes(operatorRentalSearch.toLowerCase()))
+                .slice(0, operatorRentalsShown)
                 .map((rental) => (
-                  <div key={rental.id} className="p-4 bg-gray-50 rounded-lg">
+                  <div key={rental.id} className="p-4 rounded-xl bg-gray-50 border border-gray-200">
                     <div className="flex justify-between items-start mb-2">
                       <div className="font-medium capitalize">{rental.machineType}</div>
                       <div className="font-semibold text-green-600">{formatCurrency(rental.totalAmount)}</div>
@@ -3544,8 +3633,8 @@ const breakerHours = slots
               })() : (
                 <div>Quantity: {rental.quantity} {rental.unitType}</div>
               )}
-              <div className="flex justify-between">
-              {(rental as any).description && <div>Description: {(rental as any).description}</div>}
+              <div className="flex flex-wrap justify-between gap-1 min-w-0">
+              {(rental as any).description && <div className="w-full break-words">Description: {(rental as any).description}</div>}
                 <span>Paid: <span className="text-green-600 font-medium">{formatCurrency(rental.paidAmount || 0)}</span></span>
                 <span>Pending: <span className="text-red-600 font-medium">{formatCurrency(rental.totalAmount - (rental.paidAmount || 0))}</span></span>
               </div>
@@ -3553,9 +3642,63 @@ const breakerHours = slots
                   </div>
                 ))}
             </div>
+            {rentals.filter(r => r.operator.name === user.name).filter(r => !operatorRentalSearch || r.customer.name.toLowerCase().includes(operatorRentalSearch.toLowerCase())).length > operatorRentalsShown && (
+              <button
+                onClick={() => setOperatorRentalsShown(operatorRentalsShown + 10)}
+                className="w-full mt-4 py-3 rounded-xl bg-gray-100 border border-gray-200"
+              >
+                Show more
+              </button>
+            )}
           </div>
         )}
       </div>
+
+      {activeTab === 'new-rental' && (
+        <div className="fixed inset-x-0 z-40 px-3 sm:px-4" style={{ bottom: '5.75rem' }}>
+          <div className="max-w-2xl mx-auto w-full">
+            <button
+              onClick={createRental}
+              disabled={!selectedMachine || !selectedUnit || !customerName || !customerContact || !customerAddress || loading}
+              className="w-full max-w-full bg-green-500 text-white p-3 sm:p-4 rounded-2xl disabled:bg-gray-300 shadow-lg min-h-[48px] font-semibold"
+            >
+              {loading ? 'Adding...' : 'Add Rental Entry'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-50 px-2 sm:px-3 pt-2 bg-white" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        <div className="max-w-2xl mx-auto glass-panel rounded-2xl grid grid-cols-3 gap-0 p-1 min-w-0">
+          <button
+            onClick={() => setActiveTab('new-rental')}
+            className={`flex flex-col items-center justify-center gap-1 py-2.5 px-1 min-w-0 rounded-xl text-[11px] font-medium ${
+              activeTab === 'new-rental' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'
+            }`}
+          >
+            <Plus size={18} />
+            <span className="truncate w-full text-center">Rental</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('expenses')}
+            className={`flex flex-col items-center justify-center gap-1 py-2.5 px-1 min-w-0 rounded-xl text-[11px] font-medium ${
+              activeTab === 'expenses' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'
+            }`}
+          >
+            <Wallet size={18} />
+            <span className="truncate w-full text-center">Expense</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('rentals')}
+            className={`flex flex-col items-center justify-center gap-1 py-2.5 px-1 min-w-0 rounded-xl text-[11px] font-medium ${
+              activeTab === 'rentals' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'
+            }`}
+          >
+            <Clock size={18} />
+            <span className="truncate w-full text-center">Rentals</span>
+          </button>
+        </div>
+      </nav>
     </div>
   )
 }

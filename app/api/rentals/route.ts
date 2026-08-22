@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { checkReadOnlyGuard } from '@/lib/auth-guard'
 
 
 export async function GET(request: NextRequest) {
@@ -36,6 +37,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await checkReadOnlyGuard(request)
+    if (denied) return denied
+
     const { machineType, unitType, quantity, acreage, pricePerUnit, totalAmount, description, customerName, customerContact, customerAddress, operatorId, date, dieselCost, maintenanceCost, operatorSalary, paidAmount, paymentMode, normalHourlyRate, breakerHourlyRate, timeSlots } = await request.json()
 
     if (!machineType || !unitType || !quantity || !pricePerUnit || !totalAmount || !customerName || !customerContact || !operatorId || !date) {

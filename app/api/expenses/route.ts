@@ -1,23 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import {NextRequest, NextResponse} from 'next/server'
+import {prisma} from '@/lib/prisma'
+import {checkReadOnlyGuard} from '@/lib/auth-guard'
 
 export async function GET() {
-  try {
-    const expenses = await prisma.expense.findMany({
-      include: {
-        operator: true
-      },
-      orderBy: { createdAt: 'asc' }
-    })
-    return NextResponse.json(expenses)
-  } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch expenses' }, { status: 500 })
-  }
+    try {
+        const expenses = await prisma.expense.findMany({
+            include: {
+                operator: true
+            },
+            orderBy: {createdAt: 'asc'}
+        })
+        return NextResponse.json(expenses)
+    } catch (error) {
+        return NextResponse.json({error: 'Failed to fetch expenses'}, {status: 500})
+    }
 }
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json()
+    try {
+        const denied = await checkReadOnlyGuard(request)
+        if (denied) return denied
+
+        const body = await request.json()
     const { description, amount, operatorId, category, dieselCost, maintenanceCost, operatorSalary, driverDrinkCost, date } = body
 
     if (!description || !amount || !operatorId) {

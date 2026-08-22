@@ -32,6 +32,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
+.agent/
+.idea/
+.slingshot/
+.vscode/
+*.md
 # prisma
 prisma/migrations

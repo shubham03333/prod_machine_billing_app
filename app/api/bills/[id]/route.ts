@@ -1,21 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { NextRequest, NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
+import { checkReadOnlyGuard, isReadOnlyRequest } from "@/lib/auth-guard";
 
 const prisma = new PrismaClient();
 
 // GET /api/bills/[id] - Get a specific bill
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await context.params;
   try {
-    const billId = parseInt(params.id);
+    const billId = parseInt(id);
 
     if (isNaN(billId)) {
-      return NextResponse.json(
-        { error: 'Invalid bill ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid bill ID" }, { status: 400 });
     }
 
     const bill = await prisma.bill.findUnique({
@@ -48,17 +47,14 @@ export async function GET(
             createdAt: true,
             updatedAt: true,
             operator: true,
-            payments: true
-          }
-        }
-      }
+            payments: true,
+          },
+        },
+      },
     });
 
     if (!bill) {
-      return NextResponse.json(
-        { error: 'Bill not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
     // Calculate accurate paidAmount from rental.paidAmount (since payments may not be recorded individually)
@@ -68,34 +64,48 @@ export async function GET(
 
     // Update bill's paidAmount if it doesn't match
     if (bill.paidAmount !== accuratePaidAmount) {
-      await prisma.bill.update({
-        where: { id: billId },
-        data: {
-          paidAmount: accuratePaidAmount,
-          status: accuratePaidAmount >= bill.totalAmount ? 'PAID' :
-                  accuratePaidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID'
-        }
-      });
+      if (!(await isReadOnlyRequest(request))) {
+        await prisma.bill.update({
+          where: { id: billId },
+          data: {
+            paidAmount: accuratePaidAmount,
+            status:
+              accuratePaidAmount >= bill.totalAmount
+                ? "PAID"
+                : accuratePaidAmount > 0
+                  ? "PARTIALLY_PAID"
+                  : "UNPAID",
+          },
+        });
+      }
       bill.paidAmount = accuratePaidAmount;
-      bill.status = accuratePaidAmount >= bill.totalAmount ? 'PAID' :
-                    accuratePaidAmount > 0 ? 'PARTIALLY_PAID' : 'UNPAID';
+      bill.status =
+        accuratePaidAmount >= bill.totalAmount
+          ? "PAID"
+          : accuratePaidAmount > 0
+            ? "PARTIALLY_PAID"
+            : "UNPAID";
     }
 
     // Parse timeSlots JSON for each rental
     const billWithParsedTimeSlots = {
       ...bill,
-      rentals: bill.rentals.map(rental => ({
+      rentals: bill.rentals.map((rental) => ({
         ...rental,
-        timeSlots: rental.timeSlots ? (typeof rental.timeSlots === 'string' ? JSON.parse(rental.timeSlots) : rental.timeSlots) : []
-      }))
+        timeSlots: rental.timeSlots
+          ? typeof rental.timeSlots === "string"
+            ? JSON.parse(rental.timeSlots)
+            : rental.timeSlots
+          : [],
+      })),
     };
 
     return NextResponse.json(billWithParsedTimeSlots);
   } catch (error) {
-    console.error('Error fetching bill:', error);
+    console.error("Error fetching bill:", error);
     return NextResponse.json(
-      { error: 'Failed to fetch bill' },
-      { status: 500 }
+      { error: "Failed to fetch bill" },
+      { status: 500 },
     );
   }
 }
@@ -103,16 +113,18 @@ export async function GET(
 // PUT /api/bills/[id] - Update a bill
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await context.params;
+
   try {
-    const billId = parseInt(params.id);
+    const denied = await checkReadOnlyGuard(request);
+    if (denied) return denied;
+
+    const billId = parseInt(id);
 
     if (isNaN(billId)) {
-      return NextResponse.json(
-        { error: 'Invalid bill ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid bill ID" }, { status: 400 });
     }
 
     const body = await request.json();
@@ -120,21 +132,19 @@ export async function PUT(
 
     // Check if bill exists
     const existingBill = await prisma.bill.findUnique({
-      where: { id: billId }
+      where: { id: billId },
     });
 
     if (!existingBill) {
-      return NextResponse.json(
-        { error: 'Bill not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
     // Update bill
     const updateData: any = {};
     if (status !== undefined) updateData.status = status;
     if (paidAmount !== undefined) updateData.paidAmount = paidAmount;
-    if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+    if (dueDate !== undefined)
+      updateData.dueDate = dueDate ? new Date(dueDate) : null;
 
     const bill = await prisma.bill.update({
       where: { id: billId },
@@ -144,18 +154,18 @@ export async function PUT(
         rentals: {
           include: {
             operator: true,
-            payments: true
-          }
-        }
-      }
+            payments: true,
+          },
+        },
+      },
     });
 
     return NextResponse.json(bill);
   } catch (error) {
-    console.error('Error updating bill:', error);
+    console.error("Error updating bill:", error);
     return NextResponse.json(
-      { error: 'Failed to update bill' },
-      { status: 500 }
+      { error: "Failed to update bill" },
+      { status: 500 },
     );
   }
 }
@@ -163,41 +173,40 @@ export async function PUT(
 // DELETE /api/bills/[id] - Delete a bill
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> },
 ) {
+  const { id } = await context.params;
+
   try {
-    const billId = parseInt(params.id);
+    const denied = await checkReadOnlyGuard(request);
+    if (denied) return denied;
+
+    const billId = parseInt(id);
 
     if (isNaN(billId)) {
-      return NextResponse.json(
-        { error: 'Invalid bill ID' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid bill ID" }, { status: 400 });
     }
 
     // Check if bill exists
     const existingBill = await prisma.bill.findUnique({
-      where: { id: billId }
+      where: { id: billId },
     });
 
     if (!existingBill) {
-      return NextResponse.json(
-        { error: 'Bill not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Bill not found" }, { status: 404 });
     }
 
     // Delete bill (rentals will be disconnected due to optional relation)
     await prisma.bill.delete({
-      where: { id: billId }
+      where: { id: billId },
     });
 
-    return NextResponse.json({ message: 'Bill deleted successfully' });
+    return NextResponse.json({ message: "Bill deleted successfully" });
   } catch (error) {
-    console.error('Error deleting bill:', error);
+    console.error("Error deleting bill:", error);
     return NextResponse.json(
-      { error: 'Failed to delete bill' },
-      { status: 500 }
+      { error: "Failed to delete bill" },
+      { status: 500 },
     );
   }
 }
