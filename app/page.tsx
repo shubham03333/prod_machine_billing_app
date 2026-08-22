@@ -1017,7 +1017,13 @@ const fetchBills = async () => {
       <div className="bg-white p-6 sm:p-8 rounded-lg shadow-md w-full max-w-md min-w-0">
         <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="mx-auto mb-4 w-32 h-auto" />
         <h1 className="text-2xl font-bold text-center mb-6">🚜 JD Agro & Earthmovers</h1>
-          <div className="space-y-4">
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              login()
+            }}
+          >
             <input
               type="password"
               placeholder="Enter PIN"
@@ -1026,9 +1032,11 @@ const fetchBills = async () => {
               className="w-full p-3 border rounded-lg text-center text-2xl text-black"
               inputMode="numeric"
               maxLength={10}
+              autoComplete="current-password"
+              enterKeyHint="go"
             />
             <button
-              onClick={login}
+              type="submit"
               disabled={loading}
               className="w-full bg-blue-500 text-white p-3 rounded-lg flex items-center justify-center gap-2"
             >
@@ -1036,7 +1044,7 @@ const fetchBills = async () => {
               {loading ? 'Logging in...' : 'Login'}
             </button>
             {error && <p className="text-red-500 text-center">{error}</p>}
-          </div>
+          </form>
           <div className="mt-6 text-sm text-gray-600">
             {/* <p><strong>Test PINs:</strong></p>
             <p>Admin: 1234</p>
@@ -2829,7 +2837,7 @@ if (showAdminDashboard) {
   // Operator view
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden text-gray-900 bg-white">
-      <div className="relative w-full max-w-2xl mx-auto px-3 sm:px-4 pt-4 pb-40">
+      <div className="relative w-full max-w-2xl mx-auto px-3 sm:px-4 pt-4 pb-52">
         <div className="glass-panel rounded-2xl p-3 sm:p-4 mb-4 flex items-center justify-between gap-2 min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="w-12 h-12 object-contain shrink-0" />
@@ -3655,7 +3663,7 @@ const breakerHours = slots
       </div>
 
       {activeTab === 'new-rental' && (
-        <div className="fixed inset-x-0 z-40 px-3 sm:px-4" style={{ bottom: '5.75rem' }}>
+        <div className="fixed inset-x-0 z-40 px-3 sm:px-4" style={{ bottom: 'calc(7.75rem + env(safe-area-inset-bottom, 0px))' }}>
           <div className="max-w-2xl mx-auto w-full">
             <button
               onClick={createRental}
