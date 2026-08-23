@@ -24,5 +24,9 @@ export const SYNC_SYNCING = 'SYNCING'
 export const SYNC_SYNCED = 'SYNCED'
 export const SYNC_FAILED = 'FAILED'
 
+export const APPROVAL_PENDING = 'PENDING'
+export const APPROVAL_APPROVED = 'APPROVED'
+export const APPROVAL_REJECTED = 'REJECTED'
+
 export const OPERATOR_STATUS_ACTIVE = 'ACTIVE'
 export const OPERATOR_STATUS_INACTIVE = 'INACTIVE'

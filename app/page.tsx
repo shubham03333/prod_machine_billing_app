@@ -2115,7 +2115,7 @@ if (showAdminDashboard) {
           )}
 
           {adminActiveTab === 'gps' && user.pin && (
-            <GpsMeasurementsAdmin userPin={user.pin} />
+            <GpsMeasurementsAdmin userPin={user.pin} canEdit={canEdit} onApproved={fetchRentals} />
           )}
         </div>
       </div>

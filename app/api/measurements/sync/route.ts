@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireFieldOperator } from '@/lib/field-auth'
-import { ensureRentalForMeasurement } from '@/lib/gps/billing'
 import { GPS_MIN_POINTS_FOR_POLYGON } from '@/lib/gps/constants'
 
 export const dynamic = 'force-dynamic'
@@ -66,11 +65,21 @@ export async function POST(request: NextRequest) {
 
     const existing = await prisma.gpsMeasurement.findUnique({
       where: { localUuid },
-      select: { id: true, fieldOperatorId: true },
+      select: { id: true, fieldOperatorId: true, approvalStatus: true },
     })
 
     if (existing && existing.fieldOperatorId !== operator.id) {
       return NextResponse.json({ error: 'Measurement belongs to another operator' }, { status: 403 })
+    }
+
+    if (existing && (existing.approvalStatus === 'APPROVED' || existing.approvalStatus === 'REJECTED')) {
+      return NextResponse.json({
+        cloudId: existing.id,
+        localUuid,
+        syncStatus: 'SYNCED',
+        rentalId: null,
+        locked: true,
+      })
     }
 
     const saved = await prisma.$transaction(async (tx) => {
@@ -103,20 +112,12 @@ export async function POST(request: NextRequest) {
       return measurement
     })
 
-    if (saved.status === 'COMPLETED') {
-      await ensureRentalForMeasurement(saved.id)
-    }
-
-    const full = await prisma.gpsMeasurement.findUnique({
-      where: { id: saved.id },
-      include: { rental: { select: { id: true, billId: true } } },
-    })
-
     return NextResponse.json({
       cloudId: saved.id,
       localUuid: saved.localUuid,
       syncStatus: 'SYNCED',
-      rentalId: full?.rental?.id ?? null,
+      rentalId: null,
+      approvalStatus: saved.approvalStatus || 'PENDING',
     })
   } catch (error) {
     console.error('Measurement sync error:', error)

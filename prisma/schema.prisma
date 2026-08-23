@@ -136,6 +136,8 @@ model GpsMeasurement {
   village         String?
   status          String   @default("COMPLETED")
   syncStatus      String   @default("SYNCED")
+  approvalStatus  String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  approvedAt      DateTime?
   areaSqm         Float
   areaAcre        Float
   areaGunta       Float
@@ -154,6 +156,7 @@ model GpsMeasurement {
 
   @@index([fieldOperatorId, createdAt])
   @@index([customerId])
+  @@index([approvalStatus, createdAt])
 }
 
 model GpsMeasurementPoint {

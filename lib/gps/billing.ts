@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { APPROVAL_APPROVED } from '@/lib/gps/constants'
 
 export async function ensureRentalForMeasurement(measurementId: number) {
   const measurement = await prisma.gpsMeasurement.findUnique({
@@ -10,23 +11,41 @@ export async function ensureRentalForMeasurement(measurementId: number) {
     },
   })
   if (!measurement || measurement.status !== 'COMPLETED') return null
-  if (measurement.rental) return measurement.rental
+  if (measurement.approvalStatus !== APPROVAL_APPROVED) return null
+
+  const rentalData = {
+    machineType: measurement.machine,
+    unitType: 'acre',
+    quantity: measurement.areaAcre,
+    acreage: measurement.areaAcre,
+    pricePerUnit: measurement.ratePerAcre,
+    totalAmount: measurement.amount,
+    description: measurement.village
+      ? `GPS field measurement — ${measurement.village}`
+      : `GPS field measurement ${measurement.localUuid}`,
+    customerId: measurement.customerId,
+    operatorId: measurement.fieldOperator.linkedUserId,
+    date: measurement.stoppedAt,
+    paymentStatus: 'UNPAID',
+  }
+
+  if (measurement.rental) {
+    await prisma.rental.update({
+      where: { id: measurement.rental.id },
+      data: rentalData,
+    })
+    if (measurement.rental.billId) {
+      await prisma.bill.update({
+        where: { id: measurement.rental.billId },
+        data: { totalAmount: measurement.amount },
+      })
+    }
+    return prisma.rental.findUnique({ where: { id: measurement.rental.id } })
+  }
 
   const rental = await prisma.rental.create({
     data: {
-      machineType: measurement.machine,
-      unitType: 'acre',
-      quantity: measurement.areaAcre,
-      acreage: measurement.areaAcre,
-      pricePerUnit: measurement.ratePerAcre,
-      totalAmount: measurement.amount,
-      description: measurement.village
-        ? `GPS field measurement — ${measurement.village}`
-        : `GPS field measurement ${measurement.localUuid}`,
-      customerId: measurement.customerId,
-      operatorId: measurement.fieldOperator.linkedUserId,
-      date: measurement.stoppedAt,
-      paymentStatus: 'UNPAID',
+      ...rentalData,
       gpsMeasurementId: measurement.id,
     },
   })
@@ -48,5 +67,16 @@ export async function ensureRentalForMeasurement(measurementId: number) {
     data: { billId: bill.id },
   })
 
-  return rental
+  return prisma.rental.findUnique({ where: { id: rental.id } })
+}
+
+export async function approveMeasurement(measurementId: number) {
+  await prisma.gpsMeasurement.update({
+    where: { id: measurementId },
+    data: {
+      approvalStatus: APPROVAL_APPROVED,
+      approvedAt: new Date(),
+    },
+  })
+  return ensureRentalForMeasurement(measurementId)
 }
