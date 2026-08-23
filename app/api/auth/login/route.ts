@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
     }
 
+    if ((user.role || "").trim() === "field_operator") {
+      return NextResponse.json(
+        { error: "Use Field Operator login (Operator ID + PIN)" },
+        { status: 401 },
+      );
+    }
+
     return NextResponse.json({
       id: user.id,
       name: user.name,

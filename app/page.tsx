@@ -5,14 +5,10 @@ import { Minus, LogIn, BarChart3, Trash2, Plus, RefreshCw, Edit, LogOut, FileTex
 import { StatsChart } from '../components/StatsChart'
 import BillComponent from '../components/BillComponent'
 import { canAccessAdminDashboard, canEditAdminData, isReadOnlyAdmin } from '@/lib/roles'
-
-
-
-const STANDARD_PRICES = {
-  tractor: { hourly: 500, trip: 500, acre: 1500 },
-  harvester: { hourly: 3000, trip: 3000, acre: 3000, guntha: 75 },
-  excavator: { hourly: 1000, trip: 200, acre: 400, monthly: 0, work: 0 }
-}
+import { STANDARD_PRICES } from '@/lib/prices'
+import { FIELD_SESSION_KEY } from '@/lib/gps/constants'
+import FieldOperatorsAdmin from '@/components/gps/FieldOperatorsAdmin'
+import GpsMeasurementsAdmin from '@/components/gps/GpsMeasurementsAdmin'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -166,13 +162,24 @@ interface Bill {
 export default function Home() {
   const [pin, setPin] = useState('')
   const [user, setUser] = useState<User | null>(null)
+  const [loginMode, setLoginMode] = useState<'staff' | 'field'>('staff')
+  const [fieldOperatorId, setFieldOperatorId] = useState('')
 
   // Load user from localStorage on mount
   useEffect(() => {
+    const fieldRaw = localStorage.getItem(FIELD_SESSION_KEY)
+    if (fieldRaw) {
+      window.location.href = '/field'
+      return
+    }
     const storedUser = localStorage.getItem('user')
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser)
+        if (parsedUser.role === 'field_operator') {
+          localStorage.removeItem('user')
+          return
+        }
         setUser(parsedUser)
       } catch (error) {
         console.error('Error parsing stored user:', error)
@@ -289,7 +296,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [customerSearch, setCustomerSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'new-rental' | 'expenses' | 'rentals'>('new-rental')
   const [selectedRentalId, setSelectedRentalId] = useState<number | null>(null)
-  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills'>('overview')
+  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps'>('overview')
   const [expenseFilter, setExpenseFilter] = useState({
     dateFrom: '',
     dateTo: '',
@@ -470,6 +477,28 @@ const [rentalFilter, setRentalFilter] = useState({
       setError(data.error)
     }
     } catch (err) {
+      setError('Login failed')
+    }
+    setLoading(false)
+  }
+
+  const fieldLogin = async () => {
+    if (!fieldOperatorId || !pin) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/field-auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operatorId: fieldOperatorId.trim(), pin }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        localStorage.setItem(FIELD_SESSION_KEY, JSON.stringify(data))
+        window.location.href = '/field'
+      } else {
+        setError(data.error)
+      }
+    } catch {
       setError('Login failed')
     }
     setLoading(false)
@@ -1017,21 +1046,36 @@ const fetchBills = async () => {
       <div className="bg-white p-6 sm:p-8 rounded-lg shadow-md w-full max-w-md min-w-0">
         <img src="/rentralogo.png" alt="JD Agro & Earthmovers Logo" className="mx-auto mb-4 w-32 h-auto" />
         <h1 className="text-2xl font-bold text-center mb-6">🚜 JD Agro & Earthmovers</h1>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <button type="button" onClick={() => { setLoginMode('staff'); setError('') }} className={`p-2 rounded-lg text-sm ${loginMode === 'staff' ? 'bg-slate-900 text-white' : 'bg-gray-100'}`}>Staff</button>
+          <button type="button" onClick={() => { setLoginMode('field'); setError('') }} className={`p-2 rounded-lg text-sm ${loginMode === 'field' ? 'bg-slate-900 text-white' : 'bg-gray-100'}`}>Field Operator</button>
+        </div>
           <form
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault()
-              login()
+              if (loginMode === 'field') fieldLogin()
+              else login()
             }}
           >
+            {loginMode === 'field' && (
+              <input
+                type="text"
+                placeholder="Operator ID"
+                value={fieldOperatorId}
+                onChange={(e) => setFieldOperatorId(e.target.value)}
+                className="w-full p-3 border rounded-lg text-center text-lg text-black"
+                autoComplete="username"
+              />
+            )}
             <input
               type="password"
-              placeholder="Enter PIN"
+              placeholder={loginMode === 'field' ? '4 or 6 digit PIN' : 'Enter PIN'}
               value={pin}
-              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, loginMode === 'field' ? 6 : 10))}
               className="w-full p-3 border rounded-lg text-center text-2xl text-black"
               inputMode="numeric"
-              maxLength={10}
+              maxLength={loginMode === 'field' ? 6 : 10}
               autoComplete="current-password"
               enterKeyHint="go"
             />
@@ -1178,6 +1222,8 @@ if (showAdminDashboard) {
     { id: 'expenses' as const, label: 'Expenses', Icon: Wallet, show: true },
     { id: 'customers' as const, label: 'Customers', Icon: Users, show: true },
     { id: 'bills' as const, label: 'Bills', Icon: Receipt, show: true },
+    { id: 'field-ops' as const, label: 'Field Ops', Icon: User, show: canEdit },
+    { id: 'gps' as const, label: 'GPS Fields', Icon: MapPin, show: true },
   ]
 
   return (
@@ -2067,6 +2113,14 @@ if (showAdminDashboard) {
                 )}
               </div>
             </div>
+          )}
+
+          {adminActiveTab === 'field-ops' && user.pin && (
+            <FieldOperatorsAdmin userPin={user.pin} />
+          )}
+
+          {adminActiveTab === 'gps' && user.pin && (
+            <GpsMeasurementsAdmin userPin={user.pin} />
           )}
         </div>
       </div>

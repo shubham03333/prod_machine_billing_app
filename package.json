@@ -10,13 +10,18 @@
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@turf/area": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "@turf/length": "^7.4.0",
     "html2canvas": "^1.4.1",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.263.1",
     "next": "^16.2.10",
     "react": "^18",
     "react-dom": "^18"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

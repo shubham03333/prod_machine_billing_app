@@ -13,13 +13,14 @@ datasource db {
 model User {
   id        Int      @id @default(autoincrement())
   name      String
-  role      String   // 'admin', 'readonly_admin', or 'operator'
-  pin       String   @unique // 4-digit PIN
+  role      String   // 'admin', 'readonly_admin', 'operator', or 'field_operator'
+  pin       String   @unique // 4-digit PIN (staff) or internal key (linked field operator)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   rentals  Rental[]
   expenses Expense[]
+  fieldOperator FieldOperator?
 }
 
 model Customer {
@@ -32,6 +33,7 @@ model Customer {
 
   rentals Rental[]
   bills   Bill[]
+  gpsMeasurements GpsMeasurement[]
 }
 
 model Rental {
@@ -60,6 +62,8 @@ model Rental {
   normalHourlyRate Float?  // For JCB excavator hourly work
   breakerHourlyRate Float? // For JCB excavator breaker work
   timeSlots        Json?   // Array of {startTime: string, endTime: string, isBreaker: boolean, calculatedAmount: number}
+  gpsMeasurementId Int?    @unique
+  gpsMeasurement   GpsMeasurement? @relation(fields: [gpsMeasurementId], references: [id])
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -103,4 +107,75 @@ model Bill {
   dueDate     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model FieldOperator {
+  id           Int      @id @default(autoincrement())
+  operatorId   String   @unique
+  name         String
+  phone        String
+  pinSalt      String
+  pinHash      String
+  status       String   @default("ACTIVE")
+  machine      String
+  linkedUserId Int      @unique
+  linkedUser   User     @relation(fields: [linkedUserId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  measurements GpsMeasurement[]
+}
+
+model GpsMeasurement {
+  id              Int      @id @default(autoincrement())
+  localUuid       String   @unique
+  fieldOperatorId Int
+  fieldOperator   FieldOperator @relation(fields: [fieldOperatorId], references: [id])
+  customerId      Int
+  customer        Customer @relation(fields: [customerId], references: [id])
+  machine         String
+  village         String?
+  status          String   @default("COMPLETED")
+  syncStatus      String   @default("SYNCED")
+  areaSqm         Float
+  areaAcre        Float
+  areaGunta       Float
+  areaHectare     Float
+  distanceMeters  Float
+  ratePerAcre     Float
+  amount          Float
+  gpsQuality      String?
+  startedAt       DateTime
+  stoppedAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  points          GpsMeasurementPoint[]
+  rental          Rental?
+  syncLogs        GpsSyncLog[]
+
+  @@index([fieldOperatorId, createdAt])
+  @@index([customerId])
+}
+
+model GpsMeasurementPoint {
+  id             Int      @id @default(autoincrement())
+  measurementId  Int
+  measurement    GpsMeasurement @relation(fields: [measurementId], references: [id], onDelete: Cascade)
+  sequenceNumber Int
+  latitude       Float
+  longitude      Float
+  accuracy       Float
+  timestamp      DateTime
+
+  @@unique([measurementId, sequenceNumber])
+}
+
+model GpsSyncLog {
+  id            Int      @id @default(autoincrement())
+  measurementId Int?
+  measurement   GpsMeasurement? @relation(fields: [measurementId], references: [id], onDelete: SetNull)
+  localUuid     String
+  action        String
+  status        String
+  message       String?
+  createdAt     DateTime @default(now())
 }

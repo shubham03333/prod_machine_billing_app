@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkReadOnlyGuard } from '@/lib/auth-guard'
+import { requireAdminEditor, requireFieldOperator } from '@/lib/field-auth'
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,6 +36,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(customersWithStats)
   } catch (error) {
     console.error('Get customers error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const fieldAuth = await requireFieldOperator(request)
+    const isField = !('error' in fieldAuth)
+    if (!isField) {
+      const denied = await checkReadOnlyGuard(request)
+      if (denied) return denied
+      const admin = await requireAdminEditor(request)
+      if ('error' in admin) return admin.error
+    }
+
+    const { name, contactNumber, address } = await request.json()
+    if (!name || !contactNumber) {
+      return NextResponse.json({ error: 'Name and contact number are required' }, { status: 400 })
+    }
+
+    const customer = await prisma.customer.create({
+      data: {
+        name: String(name).trim(),
+        contactNumber: String(contactNumber).trim(),
+        address: address ? String(address).trim() : null,
+      },
+    })
+    return NextResponse.json(customer, { status: 201 })
+  } catch (error) {
+    console.error('Create customer error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -27,6 +27,13 @@ export async function checkReadOnlyGuard(
   request: NextRequest,
 ): Promise<NextResponse | null> {
   try {
+    const authz = request.headers.get("authorization") || "";
+    if (authz.toLowerCase().startsWith("bearer ")) {
+      return NextResponse.json(
+        { error: "Field operators cannot access this API" },
+        { status: 403 },
+      );
+    }
     if (await isReadOnlyRequest(request)) {
       return NextResponse.json(READONLY_ERROR, { status: 403 });
     }

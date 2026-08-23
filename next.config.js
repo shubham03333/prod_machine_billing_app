@@ -6,6 +6,7 @@ const nextConfig = {
   // modules from C:\Users\shubh and Prisma fails at runtime.
   outputFileTracingRoot: path.join(__dirname),
   serverExternalPackages: ["@prisma/client", ".prisma/client"],
+  transpilePackages: ["@turf/area", "@turf/helpers", "@turf/length"],
 };
 
 module.exports = nextConfig
