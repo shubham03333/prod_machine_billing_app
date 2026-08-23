@@ -22,7 +22,7 @@ import {
   newLocalMeasurement,
   type LocalMeasurement,
 } from '@/lib/idb/measurements'
-import { buildMeasurementShareText, captureMapPng, shareMeasurement } from '@/lib/gps/share'
+import { buildMeasurementShareText, buildTracedMapFile, shareMeasurement } from '@/lib/gps/share'
 import { speakMeasuredArea } from '@/lib/gps/speakArea'
 
 type Session = {
@@ -82,6 +82,7 @@ const I18N = {
     save: 'सेव्ह',
     wa: 'WhatsApp',
     sending: 'पाठवत आहे...',
+    waHint: 'फोटो पाठवण्यासाठी यादीत WhatsApp निवडा',
     cancel: 'रद्द',
     hideFarmer: 'शेतकरी लपवा',
     showFarmer: 'शेतकरी / मशीन',
@@ -136,6 +137,7 @@ const I18N = {
     save: 'Save',
     wa: 'WhatsApp',
     sending: 'Sending...',
+    waHint: 'Choose WhatsApp in the list to send the field photo',
     cancel: 'Cancel',
     hideFarmer: 'Hide farmer',
     showFarmer: 'Farmer / machine',
@@ -469,8 +471,14 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         dateLabel: extra?.stoppedAt ? new Date(extra.stoppedAt).toLocaleString() : new Date().toLocaleString(),
         points,
       })
-      await new Promise((r) => window.setTimeout(r, 450))
-      const file = await captureMapPng(document)
+      const file = await buildTracedMapFile({
+        points,
+        satellite,
+        acres,
+        guntha,
+        village: extra?.village || gpsVillage || selectedFarmer?.address || '',
+      })
+      if (!file) throw new Error(tx.shareFail)
       await shareMeasurement({ text, file })
     } catch (err) {
       setShareError(err instanceof Error ? err.message : tx.shareFail)
@@ -584,6 +592,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             <button type="button" disabled={sharing || gps.points.length < 1} onClick={() => shareNow(gps.points)} className={`w-full bg-green-700 text-white ${btn} inline-flex items-center justify-center gap-1 disabled:bg-gray-300`}>
               <Share2 size={16} /> {sharing ? tx.sending : tx.wa}
             </button>
+            <p className="text-center text-[11px] text-gray-500">{tx.waHint}</p>
             {shareError && <p className="text-red-600 text-center text-xs">{shareError}</p>}
             <button onClick={discardMeasurement} className={`w-full bg-gray-200 ${btn}`}>{tx.cancel}</button>
             <button type="button" onClick={() => setShowOptional((v) => !v)} className="w-full text-gray-500 text-xs py-1">
@@ -651,6 +660,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             <button type="button" disabled={sharing} onClick={() => shareNow(detail.points, detail)} className={`w-full bg-green-700 text-white ${btn} inline-flex items-center justify-center gap-1`}>
               <Share2 size={16} /> {sharing ? tx.sending : tx.wa}
             </button>
+            <p className="text-center text-[11px] text-gray-500">{tx.waHint}</p>
             {shareError && <p className="text-red-600 text-center text-xs">{shareError}</p>}
           </div>
         )}

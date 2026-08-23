@@ -1,6 +1,7 @@
 import html2canvas from 'html2canvas'
 import { GUNTHA_PER_ACRE } from '@/lib/gps/constants'
 import type { GpsSample } from '@/lib/gps/geo'
+import { renderTracedFieldPng } from '@/lib/gps/renderMapPng'
 
 /** Always send GPS measurement WhatsApp shares to this number. */
 export const FIELD_WHATSAPP_NUMBER = '7558379411'
@@ -45,23 +46,10 @@ function samplePath(points: GpsSample[], maxPoints: number): GpsSample[] {
   return sampled
 }
 
-function zoomForSpan(points: GpsSample[]): number {
-  const lats = points.map((p) => p.latitude)
-  const lngs = points.map((p) => p.longitude)
-  const span = Math.max(Math.max(...lats) - Math.min(...lats), Math.max(...lngs) - Math.min(...lngs), 0.00025)
-  if (span < 0.0015) return 18
-  if (span < 0.004) return 17
-  if (span < 0.01) return 16
-  if (span < 0.025) return 15
-  if (span < 0.06) return 14
-  return 13
-}
-
 function coord(p: GpsSample): string {
   return `${p.latitude.toFixed(6)},${p.longitude.toFixed(6)}`
 }
 
-/** Google Maps walking route through sampled GPS points (query form, not a single pin). */
 export function mapsLinkForPoints(points: GpsSample[]): string {
   const clean = cleanPoints(points)
   if (clean.length === 0) return ''
@@ -71,7 +59,6 @@ export function mapsLinkForPoints(points: GpsSample[]): string {
   }
 
   const closed = clean.length >= 3 ? [...clean, clean[0]] : clean
-  // Maps URLs allow origin + destination + 9 waypoints.
   const sampled = samplePath(closed, 11)
   const origin = sampled[0]
   const destination = sampled[sampled.length - 1]
@@ -86,23 +73,6 @@ export function mapsLinkForPoints(points: GpsSample[]): string {
   return `https://www.google.com/maps/dir/?${params.toString()}`
 }
 
-/** Static image of the traced outline — WhatsApp can preview this instead of a start pin. */
-export function tracedMapImageLink(points: GpsSample[]): string {
-  const clean = cleanPoints(points)
-  if (clean.length === 0) return ''
-  const sampled = samplePath(clean.length >= 3 ? [...clean, clean[0]] : clean, 40)
-  const mid = sampled[Math.floor(sampled.length / 2)]
-  const zoom = zoomForSpan(sampled)
-  const path = sampled.map((p) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`).join('|')
-  const q = new URLSearchParams({
-    center: `${mid.latitude.toFixed(5)},${mid.longitude.toFixed(5)}`,
-    zoom: String(zoom),
-    size: '600x400',
-    maptype: 'mapnik',
-  })
-  return `https://staticmap.openstreetmap.de/staticmap.php?${q.toString()}&path=weight:5|color:0x16a34aff|${path}`
-}
-
 export function buildMeasurementShareText(input: {
   farmer: string
   village: string
@@ -115,8 +85,9 @@ export function buildMeasurementShareText(input: {
   dateLabel: string
   points: GpsSample[]
 }): string {
+  const rate = input.ratePerAcre
+  const date = input.dateLabel
   const route = mapsLinkForPoints(input.points)
-  const outline = tracedMapImageLink(input.points)
   return [
     'JD Agro — GPS Field Measurement',
     `Farmer: ${input.farmer}`,
@@ -125,11 +96,10 @@ export function buildMeasurementShareText(input: {
     `Operator: ${input.operator}`,
     `Area: ${input.acres.toFixed(3)} acre`,
     `Guntha: ${input.guntha.toFixed(2)} (1 acre = ${GUNTHA_PER_ACRE} guntha)`,
-    `Rate: ₹${input.ratePerAcre} / acre`,
+    `Rate: ₹${rate} / acre`,
     `Amount: ₹${input.amount.toFixed(2)}`,
-    `Date: ${input.dateLabel}`,
+    `Date: ${date}`,
     route ? `Traced route: ${route}` : '',
-    outline ? `Traced outline: ${outline}` : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -145,33 +115,70 @@ export async function captureMapPng(root?: ParentNode | null): Promise<File | nu
   try {
     const canvas = await html2canvas(el, {
       useCORS: true,
-      allowTaint: true,
+      allowTaint: false,
       backgroundColor: '#ffffff',
       scale: Math.min(2, window.devicePixelRatio || 1),
+      logging: false,
     })
-    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+    const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
     if (!blob) return null
-    return new File([blob], 'gps-field-map.png', { type: 'image/png' })
+    return new File([blob], 'gps-field-map.jpg', { type: 'image/jpeg' })
   } catch {
     return null
   }
+}
+
+export async function buildTracedMapFile(input: {
+  points: GpsSample[]
+  satellite?: boolean
+  acres?: number
+  guntha?: number
+  village?: string
+}): Promise<File | null> {
+  const drawn = await renderTracedFieldPng(input)
+  if (drawn) return drawn
+  return captureMapPng(document)
+}
+
+function downloadFile(file: File) {
+  const url = URL.createObjectURL(file)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = file.name
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
 export async function shareMeasurement(opts: {
   text: string
   file: File | null
 }): Promise<void> {
-  window.open(whatsappUrl(FIELD_WHATSAPP_NUMBER, opts.text), '_blank', 'noopener,noreferrer')
-
-  if (opts.file && navigator.share && navigator.canShare?.({ files: [opts.file] })) {
+  if (opts.file && typeof navigator.share === 'function') {
+    const payload: ShareData = {
+      title: 'GPS Field Measurement',
+      text: opts.text,
+      files: [opts.file],
+    }
+    const canFiles = typeof navigator.canShare !== 'function' || navigator.canShare({ files: [opts.file] })
+    if (canFiles) {
+      try {
+        await navigator.share(payload)
+        return
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+      }
+    }
     try {
-      await navigator.share({
-        title: 'GPS Field Measurement',
-        text: opts.text,
-        files: [opts.file],
-      })
+      await navigator.share({ title: 'GPS Field Measurement', text: opts.text, files: [opts.file] })
+      return
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
     }
   }
+
+  if (opts.file) downloadFile(opts.file)
+  window.open(whatsappUrl(FIELD_WHATSAPP_NUMBER, opts.text), '_blank', 'noopener,noreferrer')
 }
