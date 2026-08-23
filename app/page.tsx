@@ -117,6 +117,8 @@ interface Rental {
   createdAt: string
   payments: Payment[]
   billId?: number
+  gpsMeasurementId?: number | null
+  gpsMeasurement?: { village?: string | null } | null
   // JCB hourly specific fields
   normalHourlyRate?: number
   breakerHourlyRate?: number
@@ -157,6 +159,10 @@ interface Bill {
   status: string
   dueDate?: string
   createdAt: string
+}
+
+function rentalVillage(rental: { gpsMeasurement?: { village?: string | null } | null; customer?: { address?: string | null } }) {
+  return (rental.gpsMeasurement?.village || rental.customer?.address || '').trim()
 }
 
 export default function Home() {
@@ -764,7 +770,7 @@ const fetchBills = async () => {
       description: rental.description || '',
       customerName: rental.customer.name,
       customerContact: rental.customer.contactNumber,
-      customerAddress: rental.customer.address || '',
+      customerAddress: rentalVillage(rental),
       dieselCost: rental.dieselCost.toString(),
       maintenanceCost: rental.maintenanceCost.toString(),
       operatorSalary: rental.operatorSalary.toString(),
@@ -1008,7 +1014,7 @@ const fetchBills = async () => {
       r.operator.name,
       r.customer.name,
       r.customer.contactNumber,
-      r.customer.address || '',
+      rentalVillage(r) || '',
       r.quantity.toString(),
       r.unitType,
       r.pricePerUnit.toString(),
@@ -2261,7 +2267,7 @@ if (showAdminDashboard) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2">Customer Address</label>
+                <label className="block text-sm font-medium mb-2">Village / Location</label>
                 <input
                   type="text"
                   value={editRentalData.customerAddress}
@@ -2573,7 +2579,7 @@ if (showAdminDashboard) {
                           </div>
                           <div>
                             <span className="font-medium text-gray-700">Location:</span>
-                            <div>{rental.customer.address || 'N/A'}</div>
+                            <div>{rentalVillage(rental) || 'N/A'}</div>
                           </div>
                           <div>
                             <span className="font-medium text-gray-700">Contact:</span>
@@ -3462,7 +3468,7 @@ if (showAdminDashboard) {
                     </div>
                     <div className="text-sm text-gray-600 space-y-1">
                       <div>Customer: {rental.customer.name} ({rental.customer.contactNumber})</div>
-                      <div>Location: {rental.customer.address || 'N/A'}</div>
+                      <div>Location: {rentalVillage(rental) || 'N/A'}</div>
                       <div>Date: {new Date(rental.date).toLocaleDateString()}</div>
                       <div>Quantity: {rental.quantity} {rental.unitType}</div>
                       {rental.description && <div>Description: {rental.description}</div>}
@@ -3637,7 +3643,7 @@ if (showAdminDashboard) {
                     </div>
             <div className="text-sm text-gray-600 space-y-1">
               <div>Customer: {rental.customer.name} ({rental.customer.contactNumber})</div>
-              <div>Location: {rental.customer.address || 'N/A'}</div>
+              <div>Location: {rentalVillage(rental) || 'N/A'}</div>
               <div>Date: {new Date(rental.date).toLocaleDateString()}</div>
               {rental.machineType === 'excavator' && rental.unitType === 'hourly' ? (() => {
                 let slots = rental.timeSlots;

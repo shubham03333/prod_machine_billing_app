@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
         customer: true,
         operator: true,
         payments: true,
-        bill: true
+        bill: true,
+        gpsMeasurement: { select: { id: true, village: true } },
       },
       orderBy: { createdAt: 'desc' }
     })

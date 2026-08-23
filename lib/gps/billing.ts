@@ -20,7 +20,9 @@ export async function ensureRentalForMeasurement(measurementId: number) {
       acreage: measurement.areaAcre,
       pricePerUnit: measurement.ratePerAcre,
       totalAmount: measurement.amount,
-      description: `GPS field measurement ${measurement.localUuid}`,
+      description: measurement.village
+        ? `GPS field measurement — ${measurement.village}`
+        : `GPS field measurement ${measurement.localUuid}`,
       customerId: measurement.customerId,
       operatorId: measurement.fieldOperator.linkedUserId,
       date: measurement.stoppedAt,

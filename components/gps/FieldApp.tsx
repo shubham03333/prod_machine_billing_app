@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MapPin, Plus, RefreshCw, Search, Share2, Volume2 } from 'lucide-react'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
@@ -205,6 +205,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const [showOptional, setShowOptional] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [secureContext, setSecureContext] = useState(true)
+  const [gpsVillage, setGpsVillage] = useState('')
+  const villageLookupRef = useRef(false)
 
   const tx = I18N[lang]
   const placeholder = lang === 'en' ? PLACEHOLDER_EN : PLACEHOLDER_MR
@@ -247,11 +249,12 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         distanceMeters: geo.pathMeters,
         updatedAt: new Date().toISOString(),
         gpsQuality: gps.lastAccuracy != null ? `${gps.lastAccuracy.toFixed(1)}m` : existing.gpsQuality,
+        village: gpsVillage || existing.village,
       })
     }
     const timer = window.setInterval(flush, GPS_IDB_FLUSH_MS)
     return () => window.clearInterval(timer)
-  }, [draftUuid, gps.lastAccuracy, gps.pointsRef, gps.status])
+  }, [draftUuid, gps.lastAccuracy, gps.pointsRef, gps.status, gpsVillage])
 
   useEffect(() => {
     idbGetAllMeasurements().then((all) => {
@@ -262,12 +265,31 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
       setMachine(open.machine || session.machine || 'harvester')
       setStartedAt(open.startedAt)
       gps.restorePoints(open.points)
+      if (open.village) setGpsVillage(open.village)
       setPhase('track')
       setTab('measure')
       gps.start()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!draftUuid || !gps.here || villageLookupRef.current) return
+    villageLookupRef.current = true
+    const lat = gps.here.latitude
+    const lng = gps.here.longitude
+    fetch(`/api/geo/village?lat=${encodeURIComponent(String(lat))}&lng=${encodeURIComponent(String(lng))}`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const name = String(data?.village || '').trim()
+        if (name) setGpsVillage(name)
+      })
+      .catch(() => {
+        villageLookupRef.current = false
+      })
+  }, [draftUuid, gps.here, session.token])
 
   const today = new Date().toDateString()
   const completed = sync.rows.filter((r) => r.status === 'COMPLETED')
@@ -288,13 +310,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
 
   async function ensureFarmer() {
     if (selectedFarmer) {
-      return { id: selectedFarmer.id, name: selectedFarmer.name, village: selectedFarmer.address || '' }
-    }
-    const existing = farmers.find(
-      (f) => f.contactNumber === PLACEHOLDER_PHONE || f.name === PLACEHOLDER_MR || f.name === PLACEHOLDER_EN,
-    )
-    if (existing) {
-      return { id: existing.id, name: existing.name, village: existing.address || '' }
+      return { id: selectedFarmer.id, name: selectedFarmer.name, village: gpsVillage || selectedFarmer.address || '' }
     }
     const res = await fetch('/api/customers', {
       method: 'POST',
@@ -302,12 +318,16 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.token}`,
       },
-      body: JSON.stringify({ name: placeholder, contactNumber: PLACEHOLDER_PHONE, address: '' }),
+      body: JSON.stringify({
+        name: placeholder,
+        contactNumber: PLACEHOLDER_PHONE,
+        address: gpsVillage || '',
+      }),
     })
     const data = (await res.json()) as Farmer
     if (!res.ok || !data.id) throw new Error('Farmer save failed')
     setFarmers((prev) => [data, ...prev])
-    return { id: data.id, name: data.name, village: data.address || '' }
+    return { id: data.id, name: data.name, village: gpsVillage || data.address || '' }
   }
 
   async function beginTrack() {
@@ -343,6 +363,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     )
     setDraftUuid(uuid)
     setStartedAt(now)
+    setGpsVillage('')
+    villageLookupRef.current = false
     gps.reset()
     gps.start()
     setPhase('track')
@@ -367,7 +389,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         fieldOperatorId: session.id,
         customerId: farmer.id,
         customerName: farmer.name,
-        village: farmer.village,
+        village: gpsVillage || farmer.village,
         machine,
         status: 'COMPLETED',
         inProgress: false,
@@ -389,6 +411,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     setDraftUuid(null)
     setFarmerId(null)
     setShowOptional(false)
+    setGpsVillage('')
+    villageLookupRef.current = false
     setPhase('track')
     setTab('history')
     sync.refresh()
@@ -412,6 +436,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     setDraftUuid(null)
     setFarmerId(null)
     setShowOptional(false)
+    setGpsVillage('')
+    villageLookupRef.current = false
     setPhase('track')
     setTab('measure')
   }
@@ -433,7 +459,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
       const guntha = extra?.areaGunta ?? gps.geometry.guntha
       const text = buildMeasurementShareText({
         farmer: extra?.customerName || selectedFarmer?.name || placeholder,
-        village: extra?.village || selectedFarmer?.address || '',
+        village: extra?.village || gpsVillage || selectedFarmer?.address || '',
         machine: extra?.machine || machine,
         operator: session.name,
         acres,
@@ -443,6 +469,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         dateLabel: extra?.stoppedAt ? new Date(extra.stoppedAt).toLocaleString() : new Date().toLocaleString(),
         points,
       })
+      await new Promise((r) => window.setTimeout(r, 450))
       const file = await captureMapPng(document)
       await shareMeasurement({ text, file })
     } catch (err) {
@@ -545,7 +572,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
               <p className="text-2xl font-bold">{fmtAcre(gps.geometry.acres)} {tx.acre}</p>
               <p className="text-lg font-semibold text-amber-800">{fmtGuntha(gps.geometry.guntha)} {tx.guntha}</p>
             </div>
-            <div className="h-40"><GpsMap points={gps.points} here={gps.here} satellite={satellite} /></div>
+            <div className="h-52"><GpsMap key="review-map" points={gps.points} here={gps.here} satellite={satellite} fitToRoute /></div>
             <div className="grid grid-cols-2 gap-1.5">
               <button type="button" disabled={speaking} onClick={() => speakNow(gps.geometry.acres, gps.geometry.guntha)} className={`bg-blue-600 text-white ${btn} inline-flex items-center justify-center gap-1 disabled:opacity-70`}>
                 <Volume2 size={16} /> {speaking ? tx.speaking : tx.speak}
@@ -619,7 +646,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             <button type="button" disabled={speaking} onClick={() => speakNow(detail.areaAcre, detail.areaGunta || toGuntha(detail.areaAcre))} className={`w-full bg-blue-600 text-white ${btn} inline-flex items-center justify-center gap-1 disabled:opacity-70`}>
               <Volume2 size={16} /> {speaking ? tx.speaking : tx.speak}
             </button>
-            <div className="h-40"><GpsMap points={detail.points} satellite={satellite} /></div>
+            <div className="h-64"><GpsMap key={detail.localUuid} points={detail.points} satellite={satellite} fitToRoute /></div>
             <button type="button" onClick={() => setSatellite((s) => !s)} className={`w-full border ${btn}`}>{satellite ? tx.map : tx.sat}</button>
             <button type="button" disabled={sharing} onClick={() => shareNow(detail.points, detail)} className={`w-full bg-green-700 text-white ${btn} inline-flex items-center justify-center gap-1`}>
               <Share2 size={16} /> {sharing ? tx.sending : tx.wa}

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { GpsSample } from '@/lib/gps/geo'
-import type { CircleMarker, LatLngExpression, Map as LeafletMap, Polygon, Polyline, TileLayer } from 'leaflet'
+import type { CircleMarker, LatLngBounds, LatLngExpression, Map as LeafletMap, Polygon, Polyline, TileLayer } from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 type Props = {
@@ -10,12 +10,22 @@ type Props = {
   here?: GpsSample | null
   satellite: boolean
   className?: string
+  fitToRoute?: boolean
 }
 
 const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 
-export default function GpsMap({ points, here, satellite, className = '' }: Props) {
+function readLatLng(p: GpsSample | Record<string, unknown>): [number, number] | null {
+  const raw = p as Record<string, unknown>
+  const lat = Number(raw.latitude ?? raw.lat)
+  const lng = Number(raw.longitude ?? raw.lng ?? raw.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return [lat, lng]
+}
+
+export default function GpsMap({ points, here, satellite, className = '', fitToRoute = false }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const layerRef = useRef<TileLayer | null>(null)
@@ -23,13 +33,17 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
   const polyRef = useRef<Polygon | null>(null)
   const hereRef = useRef<CircleMarker | null>(null)
   const centeredRef = useRef(false)
+  const boundsRef = useRef<LatLngBounds | null>(null)
   const startHereRef = useRef(here)
+  const pointsRef = useRef(points)
+  pointsRef.current = points
   const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     let cancelled = false
     const start = startHereRef.current
+    const firstPoint = readLatLng((start || pointsRef.current[0]) as GpsSample)
     ;(async () => {
       const L = await import('leaflet')
       if (cancelled || !containerRef.current) return
@@ -46,11 +60,8 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
         zoomDelta: 0.5,
         wheelPxPerZoomLevel: 80,
         inertia: true,
-      }).setView(
-        start ? [start.latitude, start.longitude] : [20.5937, 78.9629],
-        start ? 18 : 5,
-      )
-      if (start) centeredRef.current = true
+      }).setView(firstPoint || [20.5937, 78.9629], firstPoint ? 18 : 5)
+      if (firstPoint) centeredRef.current = true
       mapRef.current = map
       const tiles = L.tileLayer(OSM_URL, {
         attribution: '&copy; OpenStreetMap',
@@ -60,7 +71,12 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
       })
       tiles.addTo(map)
       layerRef.current = tiles
-      window.setTimeout(() => map.invalidateSize(), 150)
+      const sizeUp = () => {
+        if (cancelled || !mapRef.current) return
+        map.invalidateSize()
+      }
+      window.setTimeout(sizeUp, 50)
+      window.setTimeout(sizeUp, 200)
       setMapReady(true)
     })()
     return () => {
@@ -71,6 +87,7 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
       lineRef.current = null
       polyRef.current = null
       hereRef.current = null
+      boundsRef.current = null
       centeredRef.current = false
       setMapReady(false)
     }
@@ -108,7 +125,9 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
     ;(async () => {
       const L = await import('leaflet')
       if (cancelled || !mapRef.current) return
-      const latlng = L.latLng(here.latitude, here.longitude)
+      const pair = readLatLng(here)
+      if (!pair) return
+      const latlng = L.latLng(pair[0], pair[1])
       if (!hereRef.current) {
         hereRef.current = L.circleMarker(latlng, {
           radius: 9,
@@ -121,6 +140,7 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
         hereRef.current.setLatLng(latlng)
       }
       hereRef.current.bringToFront()
+      if (fitToRoute) return
       if (!centeredRef.current) {
         map.setView(latlng, 18, { animate: false })
         centeredRef.current = true
@@ -131,7 +151,7 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
     return () => {
       cancelled = true
     }
-  }, [here, mapReady])
+  }, [here, mapReady, fitToRoute])
 
   useEffect(() => {
     const map = mapRef.current
@@ -140,7 +160,11 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
     ;(async () => {
       const L = await import('leaflet')
       if (cancelled || !mapRef.current) return
-      const latlngs: LatLngExpression[] = points.map((p) => [p.latitude, p.longitude])
+      const latlngs: LatLngExpression[] = []
+      for (const p of points) {
+        const pair = readLatLng(p)
+        if (pair) latlngs.push(pair)
+      }
       if (lineRef.current) {
         map.removeLayer(lineRef.current)
         lineRef.current = null
@@ -149,6 +173,7 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
         map.removeLayer(polyRef.current)
         polyRef.current = null
       }
+      boundsRef.current = null
       if (latlngs.length === 0) return
 
       const lineColor = satellite ? '#facc15' : '#2563eb'
@@ -168,11 +193,44 @@ export default function GpsMap({ points, here, satellite, className = '' }: Prop
       }
       lineRef.current.bringToFront()
       hereRef.current?.bringToFront()
+
+      const bounds = L.latLngBounds(latlngs)
+      if (!bounds.isValid()) return
+      boundsRef.current = bounds
+
+      const applyFit = () => {
+        if (cancelled || !mapRef.current || !boundsRef.current) return
+        map.invalidateSize()
+        if (fitToRoute) {
+          map.fitBounds(boundsRef.current, { padding: [36, 36], maxZoom: 19, animate: false })
+          centeredRef.current = true
+        }
+      }
+      applyFit()
+      window.setTimeout(applyFit, 80)
+      window.setTimeout(applyFit, 280)
     })()
     return () => {
       cancelled = true
     }
-  }, [points, mapReady, satellite])
+  }, [points, mapReady, satellite, fitToRoute])
+
+  useEffect(() => {
+    const el = containerRef.current
+    const map = mapRef.current
+    if (!el || !map || !mapReady) return
+    const applyFit = () => {
+      map.invalidateSize()
+      if (fitToRoute && boundsRef.current?.isValid()) {
+        map.fitBounds(boundsRef.current, { padding: [36, 36], maxZoom: 19, animate: false })
+        centeredRef.current = true
+      }
+    }
+    const ro = new ResizeObserver(() => applyFit())
+    ro.observe(el)
+    applyFit()
+    return () => ro.disconnect()
+  }, [mapReady, fitToRoute, points])
 
   return (
     <div

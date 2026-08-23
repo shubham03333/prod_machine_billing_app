@@ -179,7 +179,7 @@ export async function PUT(
 
     const rental = await prisma.rental.findUnique({
       where: { id },
-      include: { customer: true },
+      include: { customer: true, gpsMeasurement: { select: { id: true, village: true } } },
     });
 
     if (!rental) {
@@ -194,6 +194,13 @@ export async function PUT(
         address: customerAddress,
       },
     });
+
+    if (rental.gpsMeasurementId) {
+      await prisma.gpsMeasurement.update({
+        where: { id: rental.gpsMeasurementId },
+        data: { village: customerAddress || null },
+      });
+    }
 
     const updatedPaidAmount = paidAmountNum + additionalNum;
 

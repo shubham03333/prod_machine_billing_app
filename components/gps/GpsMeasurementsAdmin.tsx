@@ -6,6 +6,7 @@ type Row = {
   id: number
   localUuid: string
   machine: string
+  village?: string | null
   areaAcre: number
   amount: number
   syncStatus: string
@@ -30,6 +31,7 @@ export default function GpsMeasurementsAdmin({ userPin }: { userPin: string }) {
     if (!s) return true
     return (
       r.customer.name.toLowerCase().includes(s) ||
+      (r.village || '').toLowerCase().includes(s) ||
       (r.customer.address || '').toLowerCase().includes(s) ||
       r.fieldOperator.name.toLowerCase().includes(s) ||
       r.syncStatus.toLowerCase().includes(s)
@@ -58,7 +60,7 @@ export default function GpsMeasurementsAdmin({ userPin }: { userPin: string }) {
             {filtered.map((r) => (
               <tr key={r.id}>
                 <td className="px-3 py-3">{r.customer.name}</td>
-                <td className="px-3 py-3">{r.customer.address || '—'}</td>
+                <td className="px-3 py-3">{r.village || r.customer.address || '—'}</td>
                 <td className="px-3 py-3">{r.fieldOperator.name}</td>
                 <td className="px-3 py-3">{r.areaAcre.toFixed(3)}</td>
                 <td className="px-3 py-3">₹{r.amount.toFixed(2)}</td>
