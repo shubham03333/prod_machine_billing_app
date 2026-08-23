@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { MapPin, Plus, RefreshCw, Search, Share2 } from 'lucide-react'
+import { MapPin, Plus, RefreshCw, Search, Share2, Volume2 } from 'lucide-react'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { useMeasurementSync } from '@/hooks/useMeasurementSync'
@@ -11,6 +11,7 @@ import { computeMeasurementGeometry } from '@/lib/gps/area'
 import { acreRateForMachine } from '@/lib/prices'
 import { idbGetAllMeasurements, idbPutMeasurement, newLocalMeasurement, type LocalMeasurement } from '@/lib/idb/measurements'
 import { buildMeasurementShareText, captureMapPng, shareMeasurement } from '@/lib/gps/share'
+import { speakMeasuredArea } from '@/lib/gps/speakArea'
 
 type Session = {
   type: 'field_operator'
@@ -72,6 +73,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const [sharing, setSharing] = useState(false)
   const [shareError, setShareError] = useState('')
   const [showOptional, setShowOptional] = useState(false)
+  const [speaking, setSpeaking] = useState(false)
 
   const selectedFarmer = farmers.find((f) => f.id === farmerId) || null
   const rateN = acreRateForMachine(machine)
@@ -263,6 +265,15 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     setTab('home')
   }
 
+  async function speakArea(acres: number, guntha: number) {
+    setSpeaking(true)
+    try {
+      await speakMeasuredArea(acres, guntha)
+    } finally {
+      setSpeaking(false)
+    }
+  }
+
   async function shareCurrent(points: LocalMeasurement['points'] | typeof gps.points, extra?: Partial<LocalMeasurement>) {
     setShareError('')
     setSharing(true)
@@ -346,6 +357,15 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
                 <p className="text-3xl font-bold">{formatGuntha(gps.geometry.guntha)}</p>
               </div>
             </div>
+            <button
+              type="button"
+              disabled={speaking}
+              onClick={() => speakArea(gps.geometry.acres, gps.geometry.guntha)}
+              className="w-full bg-blue-600 text-white py-5 rounded-2xl text-xl font-bold inline-flex items-center justify-center gap-3 disabled:opacity-70"
+            >
+              <Volume2 size={28} />
+              {speaking ? 'बोलत आहे...' : 'आवाज — एकर / गुंठा'}
+            </button>
             <p className="text-center text-lg font-semibold">{gpsStatusLabel(gps.status)}</p>
             {gps.status === 'denied' && <p className="text-center text-red-600 text-lg">फोन सेटिंग मध्ये Location ON करा</p>}
             {gps.lastAccuracy != null && gps.lastAccuracy > GPS_ACCURACY_MAX_M && (
@@ -372,6 +392,15 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
               <p className="text-4xl font-bold">{formatArea(gps.geometry.acres)} एकर</p>
               <p className="text-2xl font-semibold text-amber-800">{formatGuntha(gps.geometry.guntha)} गुंठा</p>
             </div>
+            <button
+              type="button"
+              disabled={speaking}
+              onClick={() => speakArea(gps.geometry.acres, gps.geometry.guntha)}
+              className="w-full bg-blue-600 text-white py-5 rounded-2xl text-xl font-bold inline-flex items-center justify-center gap-3 disabled:opacity-70"
+            >
+              <Volume2 size={28} />
+              {speaking ? 'बोलत आहे...' : 'आवाज — एकर / गुंठा'}
+            </button>
             <div className="h-56"><GpsMap points={gps.points} satellite={satellite} /></div>
             <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
               {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
@@ -462,6 +491,15 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             <button className="text-lg font-semibold" onClick={() => setDetail(null)}>← मागे</button>
             <p className="text-4xl font-bold text-center">{formatArea(detail.areaAcre)} एकर</p>
             <p className="text-2xl text-center">{formatGuntha(detail.areaGunta || acresToGuntha(detail.areaAcre))} गुंठा</p>
+            <button
+              type="button"
+              disabled={speaking}
+              onClick={() => speakArea(detail.areaAcre, detail.areaGunta || acresToGuntha(detail.areaAcre))}
+              className="w-full bg-blue-600 text-white py-5 rounded-2xl text-xl font-bold inline-flex items-center justify-center gap-3 disabled:opacity-70"
+            >
+              <Volume2 size={28} />
+              {speaking ? 'बोलत आहे...' : 'आवाज — एकर / गुंठा'}
+            </button>
             <div className="h-56"><GpsMap points={detail.points} satellite={satellite} /></div>
             <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
               {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}

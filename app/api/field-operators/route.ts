@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkReadOnlyGuard } from '@/lib/auth-guard'
 import { requireAdminEditor, requireAdminViewer } from '@/lib/field-auth'
-import { hashPin, isValidOperatorPin } from '@/lib/gps/crypto'
+import { hashPin, isValidOperatorPin, verifyPin } from '@/lib/gps/crypto'
 import { ROLE_FIELD_OPERATOR } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
@@ -66,6 +66,11 @@ export async function POST(request: NextRequest) {
     }
     if (!isValidOperatorPin(pin)) {
       return NextResponse.json({ error: 'PIN must be 4 or 6 digits' }, { status: 400 })
+    }
+
+    const others = await prisma.fieldOperator.findMany()
+    if (others.some((op) => verifyPin(pin, op.pinSalt, op.pinHash))) {
+      return NextResponse.json({ error: 'This PIN is already used by another field operator' }, { status: 409 })
     }
 
     const exists = await prisma.fieldOperator.findUnique({ where: { operatorId } })

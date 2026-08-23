@@ -163,7 +163,6 @@ export default function Home() {
   const [pin, setPin] = useState('')
   const [user, setUser] = useState<User | null>(null)
   const [loginMode, setLoginMode] = useState<'staff' | 'field'>('staff')
-  const [fieldOperatorId, setFieldOperatorId] = useState('')
 
   // Load user from localStorage on mount
   useEffect(() => {
@@ -483,13 +482,13 @@ const [rentalFilter, setRentalFilter] = useState({
   }
 
   const fieldLogin = async () => {
-    if (!fieldOperatorId || !pin) return
+    if (!pin) return
     setLoading(true)
     try {
       const res = await fetch('/api/field-auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ operatorId: fieldOperatorId.trim(), pin }),
+        body: JSON.stringify({ pin }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -1058,16 +1057,6 @@ const fetchBills = async () => {
               else login()
             }}
           >
-            {loginMode === 'field' && (
-              <input
-                type="text"
-                placeholder="Operator ID"
-                value={fieldOperatorId}
-                onChange={(e) => setFieldOperatorId(e.target.value)}
-                className="w-full p-3 border rounded-lg text-center text-lg text-black"
-                autoComplete="username"
-              />
-            )}
             <input
               type="password"
               placeholder={loginMode === 'field' ? '4 or 6 digit PIN' : 'Enter PIN'}

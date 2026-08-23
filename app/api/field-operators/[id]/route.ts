@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkReadOnlyGuard } from '@/lib/auth-guard'
 import { requireAdminEditor } from '@/lib/field-auth'
-import { hashPin, isValidOperatorPin } from '@/lib/gps/crypto'
+import { hashPin, isValidOperatorPin, verifyPin } from '@/lib/gps/crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +37,10 @@ export async function PATCH(
       const pin = String(body.pin).trim()
       if (!isValidOperatorPin(pin)) {
         return NextResponse.json({ error: 'PIN must be 4 or 6 digits' }, { status: 400 })
+      }
+      const others = await prisma.fieldOperator.findMany({ where: { id: { not: operatorDbId } } })
+      if (others.some((op) => verifyPin(pin, op.pinSalt, op.pinHash))) {
+        return NextResponse.json({ error: 'This PIN is already used by another field operator' }, { status: 409 })
       }
       const hashed = hashPin(pin)
       data.pinSalt = hashed.pinSalt

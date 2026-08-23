@@ -7,22 +7,25 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const operatorId = String(body?.operatorId ?? '').trim()
     const pin = String(body?.pin ?? '').trim()
 
-    if (!operatorId || !pin) {
-      return NextResponse.json({ error: 'Operator ID and PIN are required' }, { status: 400 })
+    if (!pin) {
+      return NextResponse.json({ error: 'PIN is required' }, { status: 400 })
     }
     if (!isValidOperatorPin(pin)) {
       return NextResponse.json({ error: 'PIN must be 4 or 6 digits' }, { status: 400 })
     }
 
-    const operator = await prisma.fieldOperator.findUnique({
-      where: { operatorId },
-    })
-    if (!operator || !verifyPin(pin, operator.pinSalt, operator.pinHash)) {
-      return NextResponse.json({ error: 'Invalid Operator ID or PIN' }, { status: 401 })
+    const operators = await prisma.fieldOperator.findMany()
+    const matches = operators.filter((op) => verifyPin(pin, op.pinSalt, op.pinHash))
+    if (matches.length === 0) {
+      return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 })
     }
+    if (matches.length > 1) {
+      return NextResponse.json({ error: 'This PIN is used by more than one operator. Ask admin to set a unique PIN.' }, { status: 409 })
+    }
+
+    const operator = matches[0]
     if (operator.status !== 'ACTIVE') {
       return NextResponse.json({ error: 'Operator is inactive' }, { status: 403 })
     }
