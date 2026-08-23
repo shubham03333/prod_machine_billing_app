@@ -1,15 +1,16 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { LogOut, MapPin, Plus, RefreshCw, Search, User } from 'lucide-react'
+import { LogOut, MapPin, Plus, RefreshCw, Search, Share2, User } from 'lucide-react'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { useMeasurementSync } from '@/hooks/useMeasurementSync'
-import { FIELD_SESSION_KEY, GPS_ACCURACY_MAX_M, GPS_IDB_FLUSH_MS, GPS_MIN_POINTS_FOR_POLYGON, SYNC_PENDING } from '@/lib/gps/constants'
+import { FIELD_SESSION_KEY, GPS_ACCURACY_MAX_M, GPS_IDB_FLUSH_MS, GPS_MIN_POINTS_FOR_POLYGON, GUNTHA_PER_ACRE, SYNC_PENDING } from '@/lib/gps/constants'
 import { newLocalUuid } from '@/lib/gps/uuid'
 import { computeMeasurementGeometry } from '@/lib/gps/area'
 import { acreRateForMachine } from '@/lib/prices'
 import { idbGetAllMeasurements, idbPutMeasurement, newLocalMeasurement, type LocalMeasurement } from '@/lib/idb/measurements'
+import { FIELD_WHATSAPP_NUMBER, buildMeasurementShareText, captureMapPng, shareMeasurement } from '@/lib/gps/share'
 
 type Session = {
   type: 'field_operator'
@@ -35,6 +36,14 @@ function formatArea(n: number) {
   return n.toFixed(3)
 }
 
+function formatGuntha(n: number) {
+  return n.toFixed(2)
+}
+
+function acresToGuntha(acres: number) {
+  return acres * GUNTHA_PER_ACRE
+}
+
 export default function FieldApp({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const gps = useGpsTracking()
   const sync = useMeasurementSync(session.token)
@@ -51,6 +60,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const [detail, setDetail] = useState<LocalMeasurement | null>(null)
   const [historyQuery, setHistoryQuery] = useState('')
   const [newFarmer, setNewFarmer] = useState({ name: '', contactNumber: '', address: '' })
+  const [sharing, setSharing] = useState(false)
+  const [shareError, setShareError] = useState('')
 
   const selectedFarmer = farmers.find((f) => f.id === farmerId) || null
 
@@ -120,6 +131,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const todayCount = completed.filter((r) => new Date(r.stoppedAt || r.createdAt).toDateString() === today).length
   const pendingSync = sync.rows.filter((r) => r.status === 'COMPLETED' && r.syncStatus !== 'SYNCED').length
   const totalAcres = completed.reduce((s, r) => s + r.areaAcre, 0)
+  const totalGuntha = completed.reduce((s, r) => s + (r.areaGunta || acresToGuntha(r.areaAcre)), 0)
 
   async function beginTrack() {
     if (!selectedFarmer) return
@@ -217,6 +229,41 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     setPhase('pick')
   }
 
+  async function shareToWhatsApp(payload: {
+    farmer: string
+    village: string
+    machine: string
+    acres: number
+    guntha: number
+    amount: number
+    ratePerAcre: number
+    dateLabel: string
+    points: typeof gps.points
+  }) {
+    setShareError('')
+    setSharing(true)
+    try {
+      const text = buildMeasurementShareText({
+        farmer: payload.farmer,
+        village: payload.village,
+        machine: payload.machine,
+        operator: session.name,
+        acres: payload.acres,
+        guntha: payload.guntha,
+        amount: payload.amount,
+        ratePerAcre: payload.ratePerAcre,
+        dateLabel: payload.dateLabel,
+        points: payload.points,
+      })
+      const file = await captureMapPng(document)
+      await shareMeasurement({ text, file })
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Share failed')
+    } finally {
+      setSharing(false)
+    }
+  }
+
   async function addFarmer() {
     const res = await fetch('/api/customers', {
       method: 'POST',
@@ -273,6 +320,11 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
                 <p className="text-2xl font-semibold">{formatArea(totalAcres)}</p>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+                <p className="text-xs text-gray-500">Total Guntha</p>
+                <p className="text-2xl font-semibold">{formatGuntha(totalGuntha)}</p>
+                <p className="text-[11px] text-gray-500 mt-1">1 acre = {GUNTHA_PER_ACRE} guntha</p>
+              </div>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm col-span-2">
                 <p className="text-xs text-gray-500">Machine</p>
                 <p className="text-lg font-semibold capitalize">{session.machine}</p>
               </div>
@@ -330,10 +382,12 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
               <GpsMap points={gps.points} satellite={satellite} />
             </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="p-3 rounded-xl bg-gray-50 border">Area: {formatArea(gps.geometry.acres)} ac</div>
+              <div className="p-3 rounded-xl bg-gray-50 border">Acres: {formatArea(gps.geometry.acres)}</div>
+              <div className="p-3 rounded-xl bg-gray-50 border">Guntha: {formatGuntha(gps.geometry.guntha)}</div>
+              <div className="p-3 rounded-xl bg-gray-50 border col-span-2 text-[11px] text-gray-500">1 acre = {GUNTHA_PER_ACRE} guntha</div>
               <div className="p-3 rounded-xl bg-gray-50 border">Path: {gps.geometry.pathMeters.toFixed(0)} m</div>
               <div className="p-3 rounded-xl bg-gray-50 border">Accuracy: {gps.lastAccuracy != null ? `${gps.lastAccuracy.toFixed(1)} m` : '—'}</div>
-              <div className="p-3 rounded-xl bg-gray-50 border capitalize">GPS: {gps.status}</div>
+              <div className="p-3 rounded-xl bg-gray-50 border capitalize col-span-2">GPS: {gps.status}</div>
             </div>
             {gps.errorMessage && <p className="text-red-600 text-sm">{gps.errorMessage}</p>}
             {gps.lastAccuracy != null && gps.lastAccuracy > GPS_ACCURACY_MAX_M && (
@@ -355,11 +409,15 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Review measurement</h2>
             <div className="h-64"><GpsMap points={gps.points} satellite={satellite} /></div>
+            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-3 rounded-xl border">
+              {satellite ? 'Map view' : 'Satellite view'}
+            </button>
             <div className="space-y-1 text-sm">
               <p>Farmer: {selectedFarmer?.name}</p>
               <p>Village: {selectedFarmer?.address || '—'}</p>
               <p>Machine: {machine}</p>
-              <p>Acres: {formatArea(gps.geometry.acres)} · Guntha: {formatArea(gps.geometry.guntha)}</p>
+              <p>Acres: {formatArea(gps.geometry.acres)}</p>
+              <p>Guntha: {formatGuntha(gps.geometry.guntha)} <span className="text-gray-500">(1 acre = {GUNTHA_PER_ACRE} guntha)</span></p>
               <p>Hectare: {formatArea(gps.geometry.hectares)} · m²: {gps.geometry.squareMeters.toFixed(0)}</p>
               <p>Points: {gps.points.length}</p>
             </div>
@@ -368,6 +426,29 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             <p className="font-semibold">Amount: ₹{((parseFloat(rate) || 0) * gps.geometry.acres).toFixed(2)}</p>
             {gps.points.length < GPS_MIN_POINTS_FOR_POLYGON && <p className="text-red-600 text-sm">Need at least 3 GPS points to save.</p>}
             <button disabled={gps.points.length < GPS_MIN_POINTS_FOR_POLYGON} onClick={saveMeasurement} className="w-full bg-green-500 text-white p-4 rounded-2xl font-semibold disabled:bg-gray-300">Save</button>
+            <div className="glass-panel rounded-2xl p-4 space-y-2">
+              <p className="text-sm font-medium">Share to WhatsApp</p>
+              <p className="text-xs text-gray-500">Sends map screenshot and measurement to {FIELD_WHATSAPP_NUMBER}</p>
+              <button
+                type="button"
+                disabled={sharing || gps.points.length < 1}
+                onClick={() => shareToWhatsApp({
+                  farmer: selectedFarmer?.name || '',
+                  village: selectedFarmer?.address || '',
+                  machine,
+                  acres: gps.geometry.acres,
+                  guntha: gps.geometry.guntha,
+                  amount: (parseFloat(rate) || 0) * gps.geometry.acres,
+                  ratePerAcre: parseFloat(rate) || 0,
+                  dateLabel: new Date().toLocaleString(),
+                  points: gps.points,
+                })}
+                className="w-full bg-green-600 text-white p-3 rounded-xl font-semibold inline-flex items-center justify-center gap-2 disabled:bg-gray-300"
+              >
+                <Share2 size={16} /> {sharing ? 'Sharing...' : 'Share map + measurement'}
+              </button>
+              {shareError && <p className="text-red-600 text-sm">{shareError}</p>}
+            </div>
             <button onClick={discardMeasurement} className="w-full bg-gray-200 p-4 rounded-2xl font-semibold">Discard</button>
           </div>
         )}
@@ -381,9 +462,12 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             </div>
             {history.map((row) => (
               <button key={row.localUuid} onClick={() => setDetail(row)} className="w-full text-left p-4 rounded-xl border border-gray-200">
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-2">
                   <span className="font-medium">{row.customerName}</span>
-                  <span className="text-green-700">{formatArea(row.areaAcre)} ac</span>
+                  <span className="text-green-700 text-right">
+                    {formatArea(row.areaAcre)} ac
+                    <span className="block text-xs text-gray-600">{formatGuntha(row.areaGunta || acresToGuntha(row.areaAcre))} guntha</span>
+                  </span>
                 </div>
                 <div className="text-sm text-gray-500">{row.village || '—'} · {row.syncStatus}</div>
               </button>
@@ -396,16 +480,43 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           <div className="space-y-3">
             <button className="text-blue-700" onClick={() => setDetail(null)}>← Back</button>
             <div className="h-64"><GpsMap points={detail.points} satellite={satellite} /></div>
+            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-3 rounded-xl border">
+              {satellite ? 'Map view' : 'Satellite view'}
+            </button>
             <div className="text-sm space-y-1">
               <p>Farmer: {detail.customerName}</p>
               <p>Village: {detail.village || '—'}</p>
               <p>Machine: {detail.machine}</p>
               <p>Operator: {session.name}</p>
-              <p>Area: {formatArea(detail.areaAcre)} ac / {formatArea(detail.areaGunta)} guntha</p>
+              <p>Area: {formatArea(detail.areaAcre)} ac</p>
+              <p>Guntha: {formatGuntha(detail.areaGunta || acresToGuntha(detail.areaAcre))} (1 acre = {GUNTHA_PER_ACRE} guntha)</p>
               <p>Rate: ₹{detail.ratePerAcre} · Amount: ₹{detail.amount.toFixed(2)}</p>
               <p>Date: {new Date(detail.stoppedAt || detail.createdAt).toLocaleString()}</p>
               <p>GPS quality: {detail.gpsQuality}</p>
               <p>Sync: {detail.syncStatus}</p>
+            </div>
+            <div className="glass-panel rounded-2xl p-4 space-y-2">
+              <p className="text-sm font-medium">Share to WhatsApp</p>
+              <p className="text-xs text-gray-500">Sends map screenshot and measurement to {FIELD_WHATSAPP_NUMBER}</p>
+              <button
+                type="button"
+                disabled={sharing}
+                onClick={() => shareToWhatsApp({
+                  farmer: detail.customerName,
+                  village: detail.village,
+                  machine: detail.machine,
+                  acres: detail.areaAcre,
+                  guntha: detail.areaGunta || acresToGuntha(detail.areaAcre),
+                  amount: detail.amount,
+                  ratePerAcre: detail.ratePerAcre,
+                  dateLabel: new Date(detail.stoppedAt || detail.createdAt).toLocaleString(),
+                  points: detail.points,
+                })}
+                className="w-full bg-green-600 text-white p-3 rounded-xl font-semibold inline-flex items-center justify-center gap-2 disabled:bg-gray-300"
+              >
+                <Share2 size={16} /> {sharing ? 'Sharing...' : 'Share map + measurement'}
+              </button>
+              {shareError && <p className="text-red-600 text-sm">{shareError}</p>}
             </div>
           </div>
         )}
