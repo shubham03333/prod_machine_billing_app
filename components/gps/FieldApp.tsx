@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { LogOut, MapPin, Plus, RefreshCw, Search, Share2, User } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { MapPin, Plus, RefreshCw, Search, Share2 } from 'lucide-react'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { useMeasurementSync } from '@/hooks/useMeasurementSync'
@@ -10,7 +10,7 @@ import { newLocalUuid } from '@/lib/gps/uuid'
 import { computeMeasurementGeometry } from '@/lib/gps/area'
 import { acreRateForMachine } from '@/lib/prices'
 import { idbGetAllMeasurements, idbPutMeasurement, newLocalMeasurement, type LocalMeasurement } from '@/lib/idb/measurements'
-import { FIELD_WHATSAPP_NUMBER, buildMeasurementShareText, captureMapPng, shareMeasurement } from '@/lib/gps/share'
+import { buildMeasurementShareText, captureMapPng, shareMeasurement } from '@/lib/gps/share'
 
 type Session = {
   type: 'field_operator'
@@ -29,41 +29,52 @@ type Farmer = {
   address?: string | null
 }
 
-type Tab = 'home' | 'measure' | 'history' | 'sync' | 'profile'
-type MeasurePhase = 'pick' | 'track' | 'review'
+type Tab = 'home' | 'measure' | 'history'
+type MeasurePhase = 'track' | 'review'
+
+const PLACEHOLDER_FARMER = 'GPS मोजणी'
+const PLACEHOLDER_PHONE = '0000000000'
 
 function formatArea(n: number) {
-  return n.toFixed(3)
+  return n.toFixed(2)
 }
 
 function formatGuntha(n: number) {
-  return n.toFixed(2)
+  return n.toFixed(1)
 }
 
 function acresToGuntha(acres: number) {
   return acres * GUNTHA_PER_ACRE
 }
 
+function gpsStatusLabel(status: string) {
+  if (status === 'live') return 'GPS चालू'
+  if (status === 'paused') return 'थांबले'
+  if (status === 'requesting') return 'GPS शोधत आहे'
+  if (status === 'denied') return 'लोकेशन चालू करा'
+  if (status === 'weak') return 'सिग्नल कमी'
+  if (status === 'unavailable') return 'GPS नाही'
+  return 'तयार'
+}
+
 export default function FieldApp({ session, onLogout }: { session: Session; onLogout: () => void }) {
   const gps = useGpsTracking()
   const sync = useMeasurementSync(session.token)
   const [tab, setTab] = useState<Tab>('home')
-  const [phase, setPhase] = useState<MeasurePhase>('pick')
+  const [phase, setPhase] = useState<MeasurePhase>('track')
   const [farmers, setFarmers] = useState<Farmer[]>([])
-  const [farmerQuery, setFarmerQuery] = useState('')
   const [farmerId, setFarmerId] = useState<number | null>(null)
   const [machine, setMachine] = useState(session.machine || 'harvester')
   const [satellite, setSatellite] = useState(false)
   const [draftUuid, setDraftUuid] = useState<string | null>(null)
   const [startedAt, setStartedAt] = useState<string | null>(null)
-  const [rate, setRate] = useState(String(acreRateForMachine(session.machine || 'harvester')))
   const [detail, setDetail] = useState<LocalMeasurement | null>(null)
-  const [historyQuery, setHistoryQuery] = useState('')
-  const [newFarmer, setNewFarmer] = useState({ name: '', contactNumber: '', address: '' })
   const [sharing, setSharing] = useState(false)
   const [shareError, setShareError] = useState('')
+  const [showOptional, setShowOptional] = useState(false)
 
   const selectedFarmer = farmers.find((f) => f.id === farmerId) || null
+  const rateN = acreRateForMachine(machine)
 
   useEffect(() => {
     fetch('/api/customers')
@@ -102,8 +113,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
       const open = all.find((m) => m.inProgress && m.fieldOperatorId === session.id)
       if (open) {
         setDraftUuid(open.localUuid)
-        setFarmerId(open.customerId)
-        setMachine(open.machine)
+        setFarmerId(open.customerId > 0 ? open.customerId : null)
+        setMachine(open.machine || session.machine || 'harvester')
         setStartedAt(open.startedAt)
         gps.restorePoints(open.points)
         setPhase('track')
@@ -111,20 +122,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         gps.start()
       }
     })
-    // restore once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  const filteredFarmers = useMemo(() => {
-    const q = farmerQuery.toLowerCase()
-    return farmers.filter(
-      (f) =>
-        !q ||
-        f.name.toLowerCase().includes(q) ||
-        f.contactNumber.includes(q) ||
-        (f.address || '').toLowerCase().includes(q),
-    )
-  }, [farmerQuery, farmers])
 
   const today = new Date().toDateString()
   const completed = sync.rows.filter((r) => r.status === 'COMPLETED')
@@ -133,17 +132,49 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const totalAcres = completed.reduce((s, r) => s + r.areaAcre, 0)
   const totalGuntha = completed.reduce((s, r) => s + (r.areaGunta || acresToGuntha(r.areaAcre)), 0)
 
+  async function ensureFarmer(): Promise<{ id: number; name: string; village: string }> {
+    if (selectedFarmer) {
+      return { id: selectedFarmer.id, name: selectedFarmer.name, village: selectedFarmer.address || '' }
+    }
+    const existing = farmers.find((f) => f.contactNumber === PLACEHOLDER_PHONE || f.name === PLACEHOLDER_FARMER)
+    if (existing) {
+      return { id: existing.id, name: existing.name, village: existing.address || '' }
+    }
+    const res = await fetch('/api/customers', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.token}`,
+      },
+      body: JSON.stringify({
+        name: PLACEHOLDER_FARMER,
+        contactNumber: PLACEHOLDER_PHONE,
+        address: '',
+      }),
+    })
+    const data = await res.json() as Farmer
+    if (!res.ok || !data.id) {
+      throw new Error('Farmer save failed')
+    }
+    setFarmers((prev) => [data, ...prev])
+    return { id: data.id, name: data.name, village: data.address || '' }
+  }
+
   async function beginTrack() {
-    if (!selectedFarmer) return
+    if (draftUuid && phase === 'track') {
+      setTab('measure')
+      gps.start()
+      return
+    }
     const uuid = newLocalUuid()
     const now = new Date().toISOString()
     const row = newLocalMeasurement({
       localUuid: uuid,
       fieldOperatorId: session.id,
-      customerId: selectedFarmer.id,
-      customerName: selectedFarmer.name,
-      village: selectedFarmer.address || '',
-      machine,
+      customerId: farmerId || 0,
+      customerName: selectedFarmer?.name || PLACEHOLDER_FARMER,
+      village: selectedFarmer?.address || '',
+      machine: machine || session.machine || 'harvester',
       status: 'IN_PROGRESS',
       inProgress: true,
       areaSqm: 0,
@@ -151,7 +182,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
       areaGunta: 0,
       areaHectare: 0,
       distanceMeters: 0,
-      ratePerAcre: parseFloat(rate) || acreRateForMachine(machine),
+      ratePerAcre: rateN,
       amount: 0,
       gpsQuality: '',
       startedAt: now,
@@ -164,28 +195,28 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     gps.reset()
     gps.start()
     setPhase('track')
+    setTab('measure')
   }
 
   async function finishTrack() {
     gps.pause()
     gps.publish(true)
-    setRate(String(acreRateForMachine(machine)))
     setPhase('review')
   }
 
   async function saveMeasurement() {
-    if (!draftUuid || !selectedFarmer) return
+    if (!draftUuid) return
     const geo = computeMeasurementGeometry(gps.pointsRef.current)
     if (gps.pointsRef.current.length < GPS_MIN_POINTS_FOR_POLYGON) return
-    const rateN = parseFloat(rate) || 0
+    const farmer = await ensureFarmer()
     const amount = geo.acres * rateN
     const stoppedAt = new Date().toISOString()
     const row = newLocalMeasurement({
       localUuid: draftUuid,
       fieldOperatorId: session.id,
-      customerId: selectedFarmer.id,
-      customerName: selectedFarmer.name,
-      village: selectedFarmer.address || '',
+      customerId: farmer.id,
+      customerName: farmer.name,
+      village: farmer.village,
       machine,
       status: 'COMPLETED',
       inProgress: false,
@@ -205,7 +236,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     await idbPutMeasurement(row)
     gps.reset()
     setDraftUuid(null)
-    setPhase('pick')
+    setFarmerId(null)
+    setShowOptional(false)
     setTab('history')
     sync.refresh()
     sync.syncPending()
@@ -226,70 +258,37 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     }
     gps.reset()
     setDraftUuid(null)
-    setPhase('pick')
+    setFarmerId(null)
+    setShowOptional(false)
+    setTab('home')
   }
 
-  async function shareToWhatsApp(payload: {
-    farmer: string
-    village: string
-    machine: string
-    acres: number
-    guntha: number
-    amount: number
-    ratePerAcre: number
-    dateLabel: string
-    points: typeof gps.points
-  }) {
+  async function shareCurrent(points: LocalMeasurement['points'] | typeof gps.points, extra?: Partial<LocalMeasurement>) {
     setShareError('')
     setSharing(true)
     try {
+      const acres = extra?.areaAcre ?? gps.geometry.acres
+      const guntha = extra?.areaGunta ?? gps.geometry.guntha
       const text = buildMeasurementShareText({
-        farmer: payload.farmer,
-        village: payload.village,
-        machine: payload.machine,
+        farmer: extra?.customerName || selectedFarmer?.name || PLACEHOLDER_FARMER,
+        village: extra?.village || selectedFarmer?.address || '',
+        machine: extra?.machine || machine,
         operator: session.name,
-        acres: payload.acres,
-        guntha: payload.guntha,
-        amount: payload.amount,
-        ratePerAcre: payload.ratePerAcre,
-        dateLabel: payload.dateLabel,
-        points: payload.points,
+        acres,
+        guntha,
+        amount: extra?.amount ?? acres * rateN,
+        ratePerAcre: extra?.ratePerAcre ?? rateN,
+        dateLabel: extra?.stoppedAt ? new Date(extra.stoppedAt).toLocaleString() : new Date().toLocaleString(),
+        points,
       })
       const file = await captureMapPng(document)
       await shareMeasurement({ text, file })
     } catch (err) {
-      setShareError(err instanceof Error ? err.message : 'Share failed')
+      setShareError(err instanceof Error ? err.message : 'पाठवता आले नाही')
     } finally {
       setSharing(false)
     }
   }
-
-  async function addFarmer() {
-    const res = await fetch('/api/customers', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.token}`,
-      },
-      body: JSON.stringify(newFarmer),
-    })
-    const data = await res.json()
-    if (!res.ok) return
-    setFarmers((prev) => [data, ...prev])
-    setFarmerId(data.id)
-    setNewFarmer({ name: '', contactNumber: '', address: '' })
-  }
-
-  const history = completed.filter((r) => {
-    const q = historyQuery.toLowerCase()
-    if (!q) return true
-    return (
-      r.customerName.toLowerCase().includes(q) ||
-      r.village.toLowerCase().includes(q) ||
-      r.syncStatus.toLowerCase().includes(q) ||
-      r.machine.toLowerCase().includes(q)
-    )
-  })
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden text-gray-900 bg-white pb-28">
@@ -298,277 +297,211 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           <>
             <div className="glass-panel rounded-2xl p-4 mb-4 flex items-center justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-wider text-gray-500">Field operator</p>
+                <p className="text-sm text-gray-500">नमस्कार</p>
                 <h1 className="text-xl font-semibold">{session.name}</h1>
-                <p className="text-sm text-gray-500">{session.operatorId}</p>
               </div>
-              <button onClick={onLogout} className="inline-flex items-center gap-2 bg-gray-900 text-white px-3 py-2 rounded-lg text-sm">
-                <LogOut size={15} /> Logout
+              <button onClick={onLogout} className="bg-gray-900 text-white px-4 py-3 rounded-xl text-base font-semibold">
+                बाहेर पडा
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-                <p className="text-xs text-gray-500">Today&apos;s Measurements</p>
-                <p className="text-2xl font-semibold">{todayCount}</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <div className="bg-white p-4 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-500">आज</p>
+                <p className="text-3xl font-bold">{todayCount}</p>
               </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-                <p className="text-xs text-gray-500">Pending Sync</p>
-                <p className="text-2xl font-semibold text-amber-700">{pendingSync}</p>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-500">बाकी पाठवा</p>
+                <p className="text-3xl font-bold text-amber-700">{pendingSync}</p>
               </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-                <p className="text-xs text-gray-500">Total Acres</p>
-                <p className="text-2xl font-semibold">{formatArea(totalAcres)}</p>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-500">एकर</p>
+                <p className="text-3xl font-bold">{formatArea(totalAcres)}</p>
               </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-                <p className="text-xs text-gray-500">Total Guntha</p>
-                <p className="text-2xl font-semibold">{formatGuntha(totalGuntha)}</p>
-                <p className="text-[11px] text-gray-500 mt-1">1 acre = {GUNTHA_PER_ACRE} guntha</p>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm col-span-2">
-                <p className="text-xs text-gray-500">Machine</p>
-                <p className="text-lg font-semibold capitalize">{session.machine}</p>
+              <div className="bg-white p-4 rounded-2xl border border-gray-200">
+                <p className="text-sm text-gray-500">गुंठा</p>
+                <p className="text-3xl font-bold">{formatGuntha(totalGuntha)}</p>
               </div>
             </div>
             <button
-              onClick={() => { setTab('measure'); setPhase('pick') }}
-              className="w-full bg-green-500 text-white p-4 rounded-2xl font-semibold min-h-[48px]"
+              onClick={beginTrack}
+              className="w-full bg-green-500 text-white py-8 rounded-3xl text-3xl font-bold min-h-[88px] shadow-lg"
             >
-              Start Measurement
+              मोजणी सुरू करा
             </button>
           </>
         )}
 
-        {tab === 'measure' && phase === 'pick' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold">Select farmer & machine</h2>
-            <input className="glass-input" placeholder="Search farmer, phone, village" value={farmerQuery} onChange={(e) => setFarmerQuery(e.target.value)} />
-            <div className="max-h-56 overflow-y-auto space-y-2">
-              {filteredFarmers.slice(0, 40).map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setFarmerId(f.id)}
-                  className={`w-full text-left p-3 rounded-xl border ${farmerId === f.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                >
-                  <div className="font-medium">{f.name}</div>
-                  <div className="text-sm text-gray-500">{f.contactNumber} · {f.address || 'No village'}</div>
-                </button>
-              ))}
-            </div>
-            <div className="glass-panel rounded-2xl p-4 space-y-2">
-              <p className="text-sm font-medium">Add farmer</p>
-              <input className="glass-input" placeholder="Name" value={newFarmer.name} onChange={(e) => setNewFarmer({ ...newFarmer, name: e.target.value })} />
-              <input className="glass-input" placeholder="Phone" value={newFarmer.contactNumber} onChange={(e) => setNewFarmer({ ...newFarmer, contactNumber: e.target.value })} />
-              <input className="glass-input" placeholder="Village / address" value={newFarmer.address} onChange={(e) => setNewFarmer({ ...newFarmer, address: e.target.value })} />
-              <button onClick={addFarmer} className="w-full bg-slate-900 text-white p-3 rounded-xl">Save farmer</button>
-            </div>
-            <select className="glass-input" value={machine} onChange={(e) => setMachine(e.target.value)}>
-              <option value="harvester">Harvester</option>
-              <option value="tractor">Tractor</option>
-              <option value="excavator">JCB</option>
-            </select>
-            <button
-              disabled={!farmerId}
-              onClick={beginTrack}
-              className="w-full bg-green-500 text-white p-4 rounded-2xl font-semibold disabled:bg-gray-300"
-            >
-              Continue
-            </button>
-          </div>
-        )}
-
         {tab === 'measure' && phase === 'track' && (
           <div className="space-y-3">
-            <div className="h-[52vh]">
+            <div className="h-[48vh]">
               <GpsMap points={gps.points} satellite={satellite} />
             </div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="p-3 rounded-xl bg-gray-50 border">Acres: {formatArea(gps.geometry.acres)}</div>
-              <div className="p-3 rounded-xl bg-gray-50 border">Guntha: {formatGuntha(gps.geometry.guntha)}</div>
-              <div className="p-3 rounded-xl bg-gray-50 border col-span-2 text-[11px] text-gray-500">1 acre = {GUNTHA_PER_ACRE} guntha</div>
-              <div className="p-3 rounded-xl bg-gray-50 border">Path: {gps.geometry.pathMeters.toFixed(0)} m</div>
-              <div className="p-3 rounded-xl bg-gray-50 border">Accuracy: {gps.lastAccuracy != null ? `${gps.lastAccuracy.toFixed(1)} m` : '—'}</div>
-              <div className="p-3 rounded-xl bg-gray-50 border capitalize col-span-2">GPS: {gps.status}</div>
-            </div>
-            {gps.errorMessage && <p className="text-red-600 text-sm">{gps.errorMessage}</p>}
-            {gps.lastAccuracy != null && gps.lastAccuracy > GPS_ACCURACY_MAX_M && (
-              <p className="text-amber-700 text-sm">Weak signal — points over {GPS_ACCURACY_MAX_M}m accuracy are ignored.</p>
-            )}
-            <button onClick={() => setSatellite((s) => !s)} className="w-full py-3 rounded-xl border">{satellite ? 'Map view' : 'Satellite view'}</button>
             <div className="grid grid-cols-2 gap-2">
+              <div className="p-4 rounded-2xl bg-green-50 border border-green-200 text-center">
+                <p className="text-sm text-gray-600">एकर</p>
+                <p className="text-3xl font-bold">{formatArea(gps.geometry.acres)}</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-center">
+                <p className="text-sm text-gray-600">गुंठा</p>
+                <p className="text-3xl font-bold">{formatGuntha(gps.geometry.guntha)}</p>
+              </div>
+            </div>
+            <p className="text-center text-lg font-semibold">{gpsStatusLabel(gps.status)}</p>
+            {gps.status === 'denied' && <p className="text-center text-red-600 text-lg">फोन सेटिंग मध्ये Location ON करा</p>}
+            {gps.lastAccuracy != null && gps.lastAccuracy > GPS_ACCURACY_MAX_M && (
+              <p className="text-center text-amber-700">सिग्नल कमी — थोडे थांबा</p>
+            )}
+            <button onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
+              {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
+            </button>
+            <div className="grid grid-cols-2 gap-3">
               {gps.status === 'paused' ? (
-                <button onClick={gps.resume} className="bg-blue-600 text-white p-4 rounded-2xl font-semibold">Resume</button>
+                <button onClick={gps.resume} className="bg-blue-600 text-white py-6 rounded-2xl text-2xl font-bold">पुन्हा चालू</button>
               ) : (
-                <button onClick={gps.pause} className="bg-amber-500 text-white p-4 rounded-2xl font-semibold">Pause</button>
+                <button onClick={gps.pause} className="bg-amber-500 text-white py-6 rounded-2xl text-2xl font-bold">थांबा</button>
               )}
-              <button onClick={finishTrack} className="bg-slate-900 text-white p-4 rounded-2xl font-semibold">Finish</button>
+              <button onClick={finishTrack} className="bg-slate-900 text-white py-6 rounded-2xl text-2xl font-bold">पूर्ण</button>
             </div>
           </div>
         )}
 
         {tab === 'measure' && phase === 'review' && (
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Review measurement</h2>
-            <div className="h-64"><GpsMap points={gps.points} satellite={satellite} /></div>
-            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-3 rounded-xl border">
-              {satellite ? 'Map view' : 'Satellite view'}
+            <div className="text-center py-2">
+              <p className="text-sm text-gray-500">एकूण क्षेत्र</p>
+              <p className="text-4xl font-bold">{formatArea(gps.geometry.acres)} एकर</p>
+              <p className="text-2xl font-semibold text-amber-800">{formatGuntha(gps.geometry.guntha)} गुंठा</p>
+            </div>
+            <div className="h-56"><GpsMap points={gps.points} satellite={satellite} /></div>
+            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
+              {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
             </button>
-            <div className="space-y-1 text-sm">
-              <p>Farmer: {selectedFarmer?.name}</p>
-              <p>Village: {selectedFarmer?.address || '—'}</p>
-              <p>Machine: {machine}</p>
-              <p>Acres: {formatArea(gps.geometry.acres)}</p>
-              <p>Guntha: {formatGuntha(gps.geometry.guntha)} <span className="text-gray-500">(1 acre = {GUNTHA_PER_ACRE} guntha)</span></p>
-              <p>Hectare: {formatArea(gps.geometry.hectares)} · m²: {gps.geometry.squareMeters.toFixed(0)}</p>
-              <p>Points: {gps.points.length}</p>
-            </div>
-            <label className="text-sm font-medium">Rate per acre</label>
-            <input className="glass-input" type="number" value={rate} onChange={(e) => setRate(e.target.value)} />
-            <p className="font-semibold">Amount: ₹{((parseFloat(rate) || 0) * gps.geometry.acres).toFixed(2)}</p>
-            {gps.points.length < GPS_MIN_POINTS_FOR_POLYGON && <p className="text-red-600 text-sm">Need at least 3 GPS points to save.</p>}
-            <button disabled={gps.points.length < GPS_MIN_POINTS_FOR_POLYGON} onClick={saveMeasurement} className="w-full bg-green-500 text-white p-4 rounded-2xl font-semibold disabled:bg-gray-300">Save</button>
-            <div className="glass-panel rounded-2xl p-4 space-y-2">
-              <p className="text-sm font-medium">Share to WhatsApp</p>
-              <p className="text-xs text-gray-500">Sends map screenshot and measurement to {FIELD_WHATSAPP_NUMBER}</p>
-              <button
-                type="button"
-                disabled={sharing || gps.points.length < 1}
-                onClick={() => shareToWhatsApp({
-                  farmer: selectedFarmer?.name || '',
-                  village: selectedFarmer?.address || '',
-                  machine,
-                  acres: gps.geometry.acres,
-                  guntha: gps.geometry.guntha,
-                  amount: (parseFloat(rate) || 0) * gps.geometry.acres,
-                  ratePerAcre: parseFloat(rate) || 0,
-                  dateLabel: new Date().toLocaleString(),
-                  points: gps.points,
-                })}
-                className="w-full bg-green-600 text-white p-3 rounded-xl font-semibold inline-flex items-center justify-center gap-2 disabled:bg-gray-300"
-              >
-                <Share2 size={16} /> {sharing ? 'Sharing...' : 'Share map + measurement'}
-              </button>
-              {shareError && <p className="text-red-600 text-sm">{shareError}</p>}
-            </div>
-            <button onClick={discardMeasurement} className="w-full bg-gray-200 p-4 rounded-2xl font-semibold">Discard</button>
+            {gps.points.length < GPS_MIN_POINTS_FOR_POLYGON && (
+              <p className="text-center text-red-600 text-lg">शेताभोवती आणखी चाला</p>
+            )}
+            <button
+              disabled={gps.points.length < GPS_MIN_POINTS_FOR_POLYGON}
+              onClick={saveMeasurement}
+              className="w-full bg-green-500 text-white py-6 rounded-2xl text-2xl font-bold disabled:bg-gray-300"
+            >
+              सेव्ह करा
+            </button>
+            <button
+              type="button"
+              disabled={sharing || gps.points.length < 1}
+              onClick={() => shareCurrent(gps.points)}
+              className="w-full bg-green-700 text-white py-5 rounded-2xl text-xl font-bold inline-flex items-center justify-center gap-2 disabled:bg-gray-300"
+            >
+              <Share2 size={22} /> {sharing ? 'पाठवत आहे...' : 'WhatsApp पाठवा'}
+            </button>
+            {shareError && <p className="text-red-600 text-center">{shareError}</p>}
+            <button onClick={discardMeasurement} className="w-full bg-gray-200 py-4 rounded-2xl text-lg font-semibold">रद्द करा</button>
+
+            <button type="button" onClick={() => setShowOptional((v) => !v)} className="w-full text-gray-500 py-2">
+              {showOptional ? '▲ शेतकरी / मशीन लपवा' : '▼ शेतकरी / मशीन (गरज नसेल तर सोडा)'}
+            </button>
+            {showOptional && (
+              <div className="space-y-3 p-3 rounded-2xl border border-dashed">
+                <p className="text-sm text-gray-500">हे टाकणे गरजेचे नाही</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'harvester', label: 'हार्वेस्टर' },
+                    { id: 'tractor', label: 'ट्रॅक्टर' },
+                    { id: 'excavator', label: 'जेसीबी' },
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setMachine(m.id)}
+                      className={`py-4 rounded-xl font-semibold ${machine === m.id ? 'bg-slate-900 text-white' : 'bg-gray-100'}`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="max-h-40 overflow-y-auto space-y-2">
+                  {farmers.slice(0, 20).map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => setFarmerId(f.id)}
+                      className={`w-full text-left p-3 rounded-xl border ${farmerId === f.id ? 'border-green-600 bg-green-50' : 'border-gray-200'}`}
+                    >
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {tab === 'history' && !detail && (
           <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Measurement history</h2>
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-3.5 text-gray-400" />
-              <input className="glass-input pl-9" placeholder="Farmer, village, sync status" value={historyQuery} onChange={(e) => setHistoryQuery(e.target.value)} />
-            </div>
-            {history.map((row) => (
-              <button key={row.localUuid} onClick={() => setDetail(row)} className="w-full text-left p-4 rounded-xl border border-gray-200">
-                <div className="flex justify-between gap-2">
-                  <span className="font-medium">{row.customerName}</span>
-                  <span className="text-green-700 text-right">
-                    {formatArea(row.areaAcre)} ac
-                    <span className="block text-xs text-gray-600">{formatGuntha(row.areaGunta || acresToGuntha(row.areaAcre))} guntha</span>
+            <h2 className="text-2xl font-bold">जुनी मोजणी</h2>
+            {completed.map((row) => (
+              <button key={row.localUuid} onClick={() => setDetail(row)} className="w-full text-left p-4 rounded-2xl border border-gray-200">
+                <div className="flex justify-between gap-2 items-center">
+                  <span className="text-lg font-semibold">{row.customerName === PLACEHOLDER_FARMER ? 'मोजणी' : row.customerName}</span>
+                  <span className="text-right">
+                    <span className="block text-xl font-bold text-green-700">{formatArea(row.areaAcre)} एकर</span>
+                    <span className="block text-base">{formatGuntha(row.areaGunta || acresToGuntha(row.areaAcre))} गुंठा</span>
                   </span>
                 </div>
-                <div className="text-sm text-gray-500">{row.village || '—'} · {row.syncStatus}</div>
               </button>
             ))}
-            {history.length === 0 && <p className="text-gray-500 text-sm">No measurements yet.</p>}
+            {completed.length === 0 && <p className="text-gray-500 text-lg">अजून मोजणी नाही</p>}
+            {pendingSync > 0 && (
+              <button onClick={sync.syncPending} className="w-full bg-slate-900 text-white py-4 rounded-2xl text-lg font-semibold inline-flex items-center justify-center gap-2">
+                <RefreshCw size={18} /> {sync.syncing ? 'पाठवत आहे...' : 'इंटरनेटवर पाठवा'}
+              </button>
+            )}
           </div>
         )}
 
         {tab === 'history' && detail && (
           <div className="space-y-3">
-            <button className="text-blue-700" onClick={() => setDetail(null)}>← Back</button>
-            <div className="h-64"><GpsMap points={detail.points} satellite={satellite} /></div>
-            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-3 rounded-xl border">
-              {satellite ? 'Map view' : 'Satellite view'}
+            <button className="text-lg font-semibold" onClick={() => setDetail(null)}>← मागे</button>
+            <p className="text-4xl font-bold text-center">{formatArea(detail.areaAcre)} एकर</p>
+            <p className="text-2xl text-center">{formatGuntha(detail.areaGunta || acresToGuntha(detail.areaAcre))} गुंठा</p>
+            <div className="h-56"><GpsMap points={detail.points} satellite={satellite} /></div>
+            <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
+              {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
             </button>
-            <div className="text-sm space-y-1">
-              <p>Farmer: {detail.customerName}</p>
-              <p>Village: {detail.village || '—'}</p>
-              <p>Machine: {detail.machine}</p>
-              <p>Operator: {session.name}</p>
-              <p>Area: {formatArea(detail.areaAcre)} ac</p>
-              <p>Guntha: {formatGuntha(detail.areaGunta || acresToGuntha(detail.areaAcre))} (1 acre = {GUNTHA_PER_ACRE} guntha)</p>
-              <p>Rate: ₹{detail.ratePerAcre} · Amount: ₹{detail.amount.toFixed(2)}</p>
-              <p>Date: {new Date(detail.stoppedAt || detail.createdAt).toLocaleString()}</p>
-              <p>GPS quality: {detail.gpsQuality}</p>
-              <p>Sync: {detail.syncStatus}</p>
-            </div>
-            <div className="glass-panel rounded-2xl p-4 space-y-2">
-              <p className="text-sm font-medium">Share to WhatsApp</p>
-              <p className="text-xs text-gray-500">Sends map screenshot and measurement to {FIELD_WHATSAPP_NUMBER}</p>
-              <button
-                type="button"
-                disabled={sharing}
-                onClick={() => shareToWhatsApp({
-                  farmer: detail.customerName,
-                  village: detail.village,
-                  machine: detail.machine,
-                  acres: detail.areaAcre,
-                  guntha: detail.areaGunta || acresToGuntha(detail.areaAcre),
-                  amount: detail.amount,
-                  ratePerAcre: detail.ratePerAcre,
-                  dateLabel: new Date(detail.stoppedAt || detail.createdAt).toLocaleString(),
-                  points: detail.points,
-                })}
-                className="w-full bg-green-600 text-white p-3 rounded-xl font-semibold inline-flex items-center justify-center gap-2 disabled:bg-gray-300"
-              >
-                <Share2 size={16} /> {sharing ? 'Sharing...' : 'Share map + measurement'}
-              </button>
-              {shareError && <p className="text-red-600 text-sm">{shareError}</p>}
-            </div>
-          </div>
-        )}
-
-        {tab === 'sync' && (
-          <div className="space-y-3">
-            <h2 className="text-lg font-semibold">Sync status</h2>
-            <p className="text-sm">Network: {sync.online ? 'Online' : 'Offline'}</p>
-            <button onClick={sync.syncPending} className="flex items-center justify-center gap-2 w-full bg-slate-900 text-white p-3 rounded-xl">
-              <RefreshCw size={16} /> {sync.syncing ? 'Syncing...' : 'Sync now'}
+            <button
+              type="button"
+              disabled={sharing}
+              onClick={() => shareCurrent(detail.points, detail)}
+              className="w-full bg-green-700 text-white py-5 rounded-2xl text-xl font-bold inline-flex items-center justify-center gap-2"
+            >
+              <Share2 size={22} /> {sharing ? 'पाठवत आहे...' : 'WhatsApp पाठवा'}
             </button>
-            {sync.rows.filter((r) => r.status === 'COMPLETED').map((r) => (
-              <div key={r.localUuid} className="p-3 rounded-xl border text-sm flex justify-between">
-                <span>{r.customerName}</span>
-                <span>{r.syncStatus}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tab === 'profile' && (
-          <div className="glass-panel rounded-2xl p-4 space-y-2">
-            <h2 className="text-lg font-semibold">Profile</h2>
-            <p>Name: {session.name}</p>
-            <p>Operator ID: {session.operatorId}</p>
-            <p>Phone: {session.phone}</p>
-            <p>Machine: {session.machine}</p>
-            <button onClick={onLogout} className="w-full mt-4 bg-gray-900 text-white p-3 rounded-xl inline-flex items-center justify-center gap-2">
-              <LogOut size={16} /> Logout
-            </button>
+            {shareError && <p className="text-red-600 text-center">{shareError}</p>}
           </div>
         )}
       </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-50 px-2 pt-2 bg-white" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        <div className="max-w-2xl mx-auto glass-panel rounded-2xl grid grid-cols-5 gap-0 p-1">
-          {[
-            { id: 'home' as const, label: 'Home', Icon: MapPin },
-            { id: 'measure' as const, label: 'Start', Icon: Plus },
-            { id: 'history' as const, label: 'History', Icon: Search },
-            { id: 'sync' as const, label: 'Sync', Icon: RefreshCw },
-            { id: 'profile' as const, label: 'Profile', Icon: User },
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => { setTab(item.id); if (item.id !== 'history') setDetail(null) }}
-              className={`flex flex-col items-center py-2.5 rounded-xl text-[11px] ${tab === item.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}
-            >
-              <item.Icon size={18} />
-              {item.label}
-            </button>
-          ))}
+        <div className="max-w-2xl mx-auto glass-panel rounded-2xl grid grid-cols-3 gap-0 p-1">
+          <button
+            onClick={() => { setTab('home'); setDetail(null) }}
+            className={`flex flex-col items-center py-3 rounded-xl text-sm font-semibold ${tab === 'home' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}
+          >
+            <MapPin size={22} />
+            घर
+          </button>
+          <button
+            onClick={() => { beginTrack() }}
+            className={`flex flex-col items-center py-3 rounded-xl text-sm font-semibold ${tab === 'measure' ? 'bg-green-50 text-green-700' : 'text-gray-600'}`}
+          >
+            <Plus size={22} />
+            सुरू
+          </button>
+          <button
+            onClick={() => { setTab('history') }}
+            className={`flex flex-col items-center py-3 rounded-xl text-sm font-semibold ${tab === 'history' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}
+          >
+            <Search size={22} />
+            जुने
+          </button>
         </div>
       </nav>
     </div>
