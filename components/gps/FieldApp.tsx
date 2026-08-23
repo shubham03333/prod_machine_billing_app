@@ -5,7 +5,7 @@ import { MapPin, Plus, RefreshCw, Search, Share2, Volume2 } from 'lucide-react'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { useMeasurementSync } from '@/hooks/useMeasurementSync'
-import { FIELD_SESSION_KEY, GPS_ACCURACY_MAX_M, GPS_IDB_FLUSH_MS, GPS_MIN_POINTS_FOR_POLYGON, GUNTHA_PER_ACRE, SYNC_PENDING } from '@/lib/gps/constants'
+import { FIELD_SESSION_KEY, GPS_IDB_FLUSH_MS, GPS_MIN_POINTS_FOR_POLYGON, GPS_WARN_ACCURACY_M, GUNTHA_PER_ACRE, SYNC_PENDING } from '@/lib/gps/constants'
 import { newLocalUuid } from '@/lib/gps/uuid'
 import { computeMeasurementGeometry } from '@/lib/gps/area'
 import { acreRateForMachine } from '@/lib/prices'
@@ -74,9 +74,14 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const [shareError, setShareError] = useState('')
   const [showOptional, setShowOptional] = useState(false)
   const [speaking, setSpeaking] = useState(false)
+  const [secureContext, setSecureContext] = useState(true)
 
   const selectedFarmer = farmers.find((f) => f.id === farmerId) || null
   const rateN = acreRateForMachine(machine)
+
+  useEffect(() => {
+    setSecureContext(window.isSecureContext)
+  }, [])
 
   useEffect(() => {
     fetch('/api/customers')
@@ -333,6 +338,11 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
                 <p className="text-3xl font-bold">{formatGuntha(totalGuntha)}</p>
               </div>
             </div>
+            {!secureContext && (
+              <p className="mb-4 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-lg font-semibold">
+                GPS साठी साइट HTTPS ने उघडा. फोनवर http://192.168... वापरल्यास लोकेशन चालू होत नाही.
+              </p>
+            )}
             <button
               onClick={beginTrack}
               className="w-full bg-green-500 text-white py-8 rounded-3xl text-3xl font-bold min-h-[88px] shadow-lg"
@@ -344,9 +354,26 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
 
         {tab === 'measure' && phase === 'track' && (
           <div className="space-y-3">
-            <div className="h-[48vh]">
-              <GpsMap points={gps.points} satellite={satellite} />
-            </div>
+            {!gps.here ? (
+              <div className="h-[48vh] flex items-center justify-center rounded-2xl border bg-slate-50 px-6 text-center">
+                <div>
+                  <p className="text-2xl font-bold mb-2">
+                    {gps.status === 'denied' ? 'लोकेशन बंद आहे' : gps.status === 'unavailable' ? 'GPS मिळाले नाही' : 'GPS शोधत आहे'}
+                  </p>
+                  <p className="text-lg text-gray-600">
+                    {gps.status === 'denied'
+                      ? 'Chrome मध्ये Location Allow करा, फोन Location ON ठेवा'
+                      : gps.status === 'unavailable'
+                        ? 'साइट HTTPS ने उघडा. http:// IP वर GPS काम करत नाही. बाहेर उभे रहा.'
+                        : 'फोन बाहेर ठेवा, आकाश दिसेल तिथे — नकाशा लगेच तुमच्या जागेवर येईल'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[48vh]">
+                <GpsMap points={gps.points} here={gps.here} satellite={satellite} />
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <div className="p-4 rounded-2xl bg-green-50 border border-green-200 text-center">
                 <p className="text-sm text-gray-600">एकर</p>
@@ -368,8 +395,11 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             </button>
             <p className="text-center text-lg font-semibold">{gpsStatusLabel(gps.status)}</p>
             {gps.status === 'denied' && <p className="text-center text-red-600 text-lg">फोन सेटिंग मध्ये Location ON करा</p>}
-            {gps.lastAccuracy != null && gps.lastAccuracy > GPS_ACCURACY_MAX_M && (
-              <p className="text-center text-amber-700">सिग्नल कमी — थोडे थांबा</p>
+            {gps.lastAccuracy != null && (
+              <p className="text-center text-base text-gray-600">GPS अचूकता: {Math.round(gps.lastAccuracy)} मीटर</p>
+            )}
+            {gps.lastAccuracy != null && gps.lastAccuracy > GPS_WARN_ACCURACY_M && (
+              <p className="text-center text-amber-700">सिग्नल सुधारत आहे — चालत रहा, रस्ता दिसेल</p>
             )}
             <button onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
               {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
@@ -401,7 +431,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
               <Volume2 size={28} />
               {speaking ? 'बोलत आहे...' : 'आवाज — एकर / गुंठा'}
             </button>
-            <div className="h-56"><GpsMap points={gps.points} satellite={satellite} /></div>
+            <div className="h-56"><GpsMap points={gps.points} here={gps.here} satellite={satellite} /></div>
             <button type="button" onClick={() => setSatellite((s) => !s)} className="w-full py-4 rounded-2xl border text-lg font-semibold">
               {satellite ? 'साधा नकाशा' : 'उपग्रह नकाशा'}
             </button>

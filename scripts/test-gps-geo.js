@@ -12,11 +12,11 @@ function haversineMeters(a, b) {
 }
 
 function shouldAcceptGpsPoint(prev, next, opts = {}) {
-  const accuracyMaxM = opts.accuracyMaxM ?? 5
-  const minMoveM = opts.minMoveM ?? 2
-  const maxSpeedMps = opts.maxSpeedMps ?? 20
-  if (next.accuracy > accuracyMaxM) return false
+  const accuracyMaxM = opts.accuracyMaxM ?? 50
+  const minMoveM = opts.minMoveM ?? 1
+  const maxSpeedMps = opts.maxSpeedMps ?? 25
   if (!prev) return true
+  if (next.accuracy > accuracyMaxM) return false
   const distance = haversineMeters(prev, next)
   if (distance < minMoveM) return false
   const dtSec = (next.timestamp - prev.timestamp) / 1000
@@ -26,10 +26,9 @@ function shouldAcceptGpsPoint(prev, next, opts = {}) {
 }
 
 const a = { latitude: 18.52, longitude: 73.85, accuracy: 3, timestamp: 1000 }
-const poor = { latitude: 18.521, longitude: 73.851, accuracy: 25, timestamp: 2000 }
+const poor = { latitude: 18.521, longitude: 73.851, accuracy: 80, timestamp: 2000 }
 const jump = { latitude: 19.0, longitude: 74.0, accuracy: 3, timestamp: 1100 }
 if (shouldAcceptGpsPoint(null, a) !== true) throw new Error('first point')
 if (shouldAcceptGpsPoint(a, poor) !== false) throw new Error('poor accuracy')
 if (shouldAcceptGpsPoint(a, jump) !== false) throw new Error('impossible jump')
-if (Math.abs((4046.8564224 / 4046.8564224) - 1) > 1e-9) throw new Error('acre')
 console.log('gps geo checks passed')

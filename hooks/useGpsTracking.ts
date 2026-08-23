@@ -7,12 +7,19 @@ import { computeMeasurementGeometry, emptyArea, type AreaBreakdown } from '@/lib
 
 export type GpsStatus = 'idle' | 'requesting' | 'live' | 'paused' | 'denied' | 'unavailable' | 'weak'
 
+const WATCH_OPTS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 25000,
+}
+
 export function useGpsTracking() {
   const watchIdRef = useRef<number | null>(null)
   const pointsRef = useRef<GpsSample[]>([])
   const lastAcceptedRef = useRef<GpsSample | null>(null)
   const lastUiRef = useRef(0)
   const [points, setPoints] = useState<GpsSample[]>([])
+  const [here, setHere] = useState<GpsSample | null>(null)
   const [lastAccuracy, setLastAccuracy] = useState<number | null>(null)
   const [status, setStatus] = useState<GpsStatus>('idle')
   const [errorMessage, setErrorMessage] = useState('')
@@ -39,17 +46,17 @@ export function useGpsTracking() {
       const sample: GpsSample = {
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
-        accuracy: pos.coords.accuracy,
+        accuracy: pos.coords.accuracy || 30,
         timestamp: pos.timestamp || Date.now(),
       }
+      setHere(sample)
       setLastAccuracy(sample.accuracy)
+      setStatus((prev) => (prev === 'paused' ? 'paused' : 'live'))
       if (!shouldAcceptGpsPoint(lastAcceptedRef.current, sample)) {
-        setStatus((prev) => (prev === 'paused' ? 'paused' : sample.accuracy > 12 ? 'weak' : 'live'))
         return
       }
       lastAcceptedRef.current = sample
       pointsRef.current = [...pointsRef.current, sample]
-      setStatus('live')
       publish()
     },
     [publish],
@@ -74,11 +81,8 @@ export function useGpsTracking() {
     setStatus('requesting')
     setErrorMessage('')
     stopWatch()
-    watchIdRef.current = navigator.geolocation.watchPosition(onPosition, onError, {
-      enableHighAccuracy: true,
-      maximumAge: 1000,
-      timeout: 15000,
-    })
+    navigator.geolocation.getCurrentPosition(onPosition, onError, WATCH_OPTS)
+    watchIdRef.current = navigator.geolocation.watchPosition(onPosition, onError, WATCH_OPTS)
   }, [onError, onPosition, stopWatch])
 
   const pause = useCallback(() => {
@@ -96,6 +100,7 @@ export function useGpsTracking() {
     pointsRef.current = []
     lastAcceptedRef.current = null
     setPoints([])
+    setHere(null)
     setGeometry(emptyArea())
     setLastAccuracy(null)
     setStatus('idle')
@@ -106,6 +111,7 @@ export function useGpsTracking() {
     pointsRef.current = saved
     lastAcceptedRef.current = saved[saved.length - 1] || null
     setPoints(saved)
+    setHere(saved[saved.length - 1] || null)
     setGeometry(computeMeasurementGeometry(saved))
   }, [])
 
@@ -114,6 +120,7 @@ export function useGpsTracking() {
   return {
     points,
     pointsRef,
+    here,
     geometry,
     lastAccuracy,
     status,

@@ -1,6 +1,8 @@
-export const GPS_ACCURACY_MAX_M = 5
-export const GPS_MIN_MOVE_M = 2
-export const GPS_MAX_SPEED_MPS = 20
+export const GPS_ACCURACY_MAX_M = 50
+export const GPS_FIRST_FIX_MAX_M = 500
+export const GPS_WARN_ACCURACY_M = 30
+export const GPS_MIN_MOVE_M = 1
+export const GPS_MAX_SPEED_MPS = 25
 export const GPS_UI_THROTTLE_MS = 250
 export const GPS_IDB_FLUSH_MS = 800
 export const GPS_SYNC_INTERVAL_MS = 20_000

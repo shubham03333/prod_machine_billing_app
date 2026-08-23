@@ -38,8 +38,8 @@ export function shouldAcceptGpsPoint(
   const maxSpeedMps = opts?.maxSpeedMps ?? GPS_MAX_SPEED_MPS
 
   if (!Number.isFinite(next.latitude) || !Number.isFinite(next.longitude)) return false
-  if (next.accuracy > accuracyMaxM) return false
   if (!prev) return true
+  if (next.accuracy > accuracyMaxM) return false
 
   const distance = haversineMeters(prev, next)
   if (distance < minMoveM) return false
