@@ -25,13 +25,16 @@ function speakOnce(text: string, lang: string): Promise<void> {
   })
 }
 
-export async function speakMeasuredArea(acres: number, guntha: number): Promise<void> {
+export async function speakMeasuredArea(
+  acres: number,
+  guntha: number,
+  lang: 'mr' | 'en' = 'mr',
+): Promise<void> {
   if (typeof window === 'undefined' || !window.speechSynthesis) {
-    throw new Error('या फोनवर आवाज उपलब्ध नाही')
+    throw new Error(lang === 'en' ? 'Voice is not available on this phone' : 'या फोनवर आवाज उपलब्ध नाही')
   }
 
   window.speechSynthesis.cancel()
-  // Some browsers load voices asynchronously.
   await new Promise((r) => setTimeout(r, 50))
   if (window.speechSynthesis.getVoices().length === 0) {
     await new Promise<void>((resolve) => {
@@ -43,10 +46,15 @@ export async function speakMeasuredArea(acres: number, guntha: number): Promise<
   const acreText = acres.toFixed(2)
   const gunthaText = guntha.toFixed(1)
 
-  const marathi = `मोजलेले क्षेत्र ${gunthaText} गुंठा आहे. म्हणजे ${acreText} एकर.`
-  const english = `Measured area is ${gunthaText} guntha. That is ${acreText} acre.`
+  if (lang === 'en') {
+    await speakOnce(
+      `Measured area is ${gunthaText} guntha. That is ${acreText} acre.`,
+      pickVoice('en-IN') ? 'en-IN' : 'en-US',
+    )
+    return
+  }
 
+  const marathi = `मोजलेले क्षेत्र ${gunthaText} गुंठा आहे. म्हणजे ${acreText} एकर.`
   const marathiLang = pickVoice('mr-IN') ? 'mr-IN' : pickVoice('hi-IN') ? 'hi-IN' : 'hi-IN'
   await speakOnce(marathi, marathiLang)
-  await speakOnce(english, pickVoice('en-IN') ? 'en-IN' : 'en-US')
 }

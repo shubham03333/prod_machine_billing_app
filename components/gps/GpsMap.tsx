@@ -9,12 +9,13 @@ type Props = {
   points: GpsSample[]
   here?: GpsSample | null
   satellite: boolean
+  className?: string
 }
 
 const OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const SAT_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 
-export default function GpsMap({ points, here, satellite }: Props) {
+export default function GpsMap({ points, here, satellite, className = '' }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<LeafletMap | null>(null)
   const layerRef = useRef<TileLayer | null>(null)
@@ -176,9 +177,9 @@ export default function GpsMap({ points, here, satellite }: Props) {
   return (
     <div
       data-gps-map
-      className="gps-map-wrap w-full h-full min-h-[320px] rounded-2xl overflow-hidden border border-gray-200"
+      className={`gps-map-wrap w-full h-full min-h-0 rounded-xl overflow-hidden border border-gray-200 ${className}`}
     >
-      <div ref={containerRef} className="w-full h-full min-h-[320px]" />
+      <div ref={containerRef} className="w-full h-full min-h-0" />
     </div>
   )
 }

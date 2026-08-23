@@ -3,18 +3,32 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canEditAdminData } from "@/lib/roles";
+import {
+  checkIpLoginRateLimit,
+  checkPinLoginRateLimit,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from "@/lib/login-rate-limit";
 
 export async function POST(request: NextRequest) {
+  const ipLimited = checkIpLoginRateLimit(request);
+  if (ipLimited) return ipLimited;
+
   try {
     const body = await request.json();
     const pinRaw = (body?.pin ?? "").toString();
     const pin = pinRaw.trim();
 
+    const pinLimited = checkPinLoginRateLimit(pin);
+    if (pinLimited) return pinLimited;
+
     if (!pin) {
+      recordLoginFailure(request, pin);
       return NextResponse.json({ error: "PIN is required" }, { status: 400 });
     }
 
     if (pin.length > 10) {
+      recordLoginFailure(request, pin);
       return NextResponse.json({ error: "PIN must be at most 10 digits" }, { status: 400 });
     }
 
@@ -27,16 +41,19 @@ export async function POST(request: NextRequest) {
 
     // If DB is reachable but user isn't found, return 401 (no 500)
     if (!user) {
+      recordLoginFailure(request, pin);
       return NextResponse.json({ error: "Invalid PIN" }, { status: 401 });
     }
 
     if ((user.role || "").trim() === "field_operator") {
+      recordLoginFailure(request, pin);
       return NextResponse.json(
         { error: "Use Field Operator login (Operator ID + PIN)" },
         { status: 401 },
       );
     }
 
+    recordLoginSuccess(request, pin);
     return NextResponse.json({
       id: user.id,
       name: user.name,
