@@ -146,7 +146,7 @@ export default function GpsMeasurementsAdmin({ userPin, canEdit = false, onAppro
     }))
   }
 
-  async function saveCorrections() {
+  async function saveCorrections(closePanel = true) {
     if (!selected || !canEdit) return false
     setSaving(true)
     setError('')
@@ -166,6 +166,7 @@ export default function GpsMeasurementsAdmin({ userPin, canEdit = false, onAppro
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Save failed')
       load()
+      if (closePanel) setSelectedId(null)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -178,7 +179,7 @@ export default function GpsMeasurementsAdmin({ userPin, canEdit = false, onAppro
   async function decide(action: 'approve' | 'reject') {
     if (!selected || !canEdit) return
     if (action === 'approve') {
-      const ok = await saveCorrections()
+      const ok = await saveCorrections(false)
       if (!ok) return
     }
     setSaving(true)
