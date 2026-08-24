@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { MapPin, Plus, RefreshCw, Search, Share2, Volume2 } from 'lucide-react'
+import CopilotPanel from '@/components/copilot/CopilotPanel'
 import GpsMap from '@/components/gps/GpsMap'
 import { useGpsTracking } from '@/hooks/useGpsTracking'
 import { useMeasurementSync } from '@/hooks/useMeasurementSync'
@@ -45,6 +46,7 @@ type Farmer = {
 type Tab = 'home' | 'measure' | 'history'
 type MeasurePhase = 'track' | 'review'
 type Lang = 'mr' | 'en'
+type WorkMode = 'pick' | 'boundary' | 'copilot'
 
 const LANG_KEY = 'fieldUiLang'
 const PLACEHOLDER_MR = 'GPS मोजणी'
@@ -106,6 +108,11 @@ const I18N = {
     harv: 'हार्वेस्टर',
     trac: 'ट्रॅक्टर',
     excav: 'जेसीबी',
+    pickTitle: 'कामाचा प्रकार निवडा',
+    boundary: 'सीमा मोजणी',
+    copilot: 'AI Copilot',
+    boundaryHint: 'शेताच्या कडेने चाला. Start / Stop स्वतः दाबा.',
+    copilotHint: 'GPS आपोआप. रस्ता vs कापणी ओळख. Start/Stop नको.',
   },
   en: {
     hello: 'Hello',
@@ -161,6 +168,11 @@ const I18N = {
     harv: 'Harvester',
     trac: 'Tractor',
     excav: 'JCB',
+    pickTitle: 'Choose work mode',
+    boundary: 'Boundary measurement',
+    copilot: 'AI Copilot',
+    boundaryHint: 'Walk the field edge. You press Start / Stop.',
+    copilotHint: 'GPS runs automatically. Detects road vs harvest. No Start/Stop.',
   },
 }
 
@@ -208,6 +220,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
   const [speaking, setSpeaking] = useState(false)
   const [secureContext, setSecureContext] = useState(true)
   const [gpsVillage, setGpsVillage] = useState('')
+  const [workMode, setWorkMode] = useState<WorkMode>('pick')
   const villageLookupRef = useRef(false)
 
   const tx = I18N[lang]
@@ -369,6 +382,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     villageLookupRef.current = false
     gps.reset()
     gps.start()
+    setWorkMode('boundary')
     setPhase('track')
     setTab('measure')
   }
@@ -513,10 +527,51 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
             </div>
             {!secureContext && <p className="mt-2 p-2 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">{tx.https}</p>}
             <button onClick={beginTrack} className={`mt-3 w-full bg-green-500 text-white ${btn}`}>{tx.start}</button>
+            <button
+              type="button"
+              onClick={() => {
+                setWorkMode('copilot')
+                setTab('measure')
+              }}
+              className={`mt-2 w-full bg-slate-900 text-white ${btn}`}
+            >
+              {tx.copilot}
+            </button>
           </div>
         )}
 
-        {tab === 'measure' && phase === 'track' && !tracking && (
+        {tab === 'measure' && workMode === 'pick' && phase === 'track' && !tracking && (
+          <div className="h-full flex flex-col items-center justify-center text-center px-2 gap-3">
+            <p className="text-sm font-semibold">{tx.pickTitle}</p>
+            <button
+              type="button"
+              onClick={() => setWorkMode('boundary')}
+              className={`w-full max-w-sm bg-green-500 text-white ${btn} text-base shadow`}
+            >
+              {tx.boundary}
+            </button>
+            <p className="text-xs text-gray-500 max-w-sm">{tx.boundaryHint}</p>
+            <button
+              type="button"
+              onClick={() => setWorkMode('copilot')}
+              className={`w-full max-w-sm bg-slate-900 text-white ${btn} text-base shadow`}
+            >
+              {tx.copilot}
+            </button>
+            <p className="text-xs text-gray-500 max-w-sm">{tx.copilotHint}</p>
+          </div>
+        )}
+
+        {tab === 'measure' && workMode === 'copilot' && (
+          <CopilotPanel
+            session={{ id: session.id, name: session.name, machine: session.machine, token: session.token }}
+            lang={lang}
+            village={gpsVillage}
+            onBack={() => setWorkMode('pick')}
+          />
+        )}
+
+        {tab === 'measure' && workMode === 'boundary' && phase === 'track' && !tracking && (
           <div className="h-full flex flex-col items-center justify-center text-center px-2">
             {!secureContext && <p className="mb-3 p-2 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold">{tx.https}</p>}
             <p className="text-sm text-gray-600 mb-3">{tx.startHint}</p>
@@ -524,7 +579,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           </div>
         )}
 
-        {tab === 'measure' && phase === 'track' && tracking && (
+        {tab === 'measure' && workMode !== 'copilot' && phase === 'track' && tracking && (
           <div className="h-full flex flex-col gap-1.5 min-h-0">
             <div className="flex-1 min-h-0">
               {!gps.here ? (
@@ -573,7 +628,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           </div>
         )}
 
-        {tab === 'measure' && phase === 'review' && (
+        {tab === 'measure' && workMode !== 'copilot' && phase === 'review' && (
           <div className="h-full overflow-y-auto space-y-2 pb-2">
             <div className="text-center">
               <p className="text-xs text-gray-500">{tx.total}</p>
@@ -671,7 +726,7 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
           <button onClick={() => { setTab('home'); setDetail(null) }} className={`flex flex-col items-center py-1.5 rounded-lg text-[11px] font-semibold ${tab === 'home' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}>
             <MapPin size={16} /> {tx.navHome}
           </button>
-          <button onClick={() => { setTab('measure'); setDetail(null) }} className={`flex flex-col items-center py-1.5 rounded-lg text-[11px] font-semibold ${tab === 'measure' ? 'bg-green-50 text-green-700' : 'text-gray-600'}`}>
+          <button onClick={() => { setTab('measure'); setDetail(null); if (!tracking) setWorkMode('pick') }} className={`flex flex-col items-center py-1.5 rounded-lg text-[11px] font-semibold ${tab === 'measure' ? 'bg-green-50 text-green-700' : 'text-gray-600'}`}>
             <Plus size={16} /> {tx.navStart}
           </button>
           <button onClick={() => { setTab('history') }} className={`flex flex-col items-center py-1.5 rounded-lg text-[11px] font-semibold ${tab === 'history' ? 'bg-blue-50 text-blue-700' : 'text-gray-600'}`}>

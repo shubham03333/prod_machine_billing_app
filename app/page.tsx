@@ -9,6 +9,7 @@ import { STANDARD_PRICES } from '@/lib/prices'
 import { FIELD_SESSION_KEY } from '@/lib/gps/constants'
 import FieldOperatorsAdmin from '@/components/gps/FieldOperatorsAdmin'
 import GpsMeasurementsAdmin from '@/components/gps/GpsMeasurementsAdmin'
+import CopilotSettingsAdmin from '@/components/copilot/CopilotSettingsAdmin'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -301,7 +302,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [customerSearch, setCustomerSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'new-rental' | 'expenses' | 'rentals'>('new-rental')
   const [selectedRentalId, setSelectedRentalId] = useState<number | null>(null)
-  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps'>('overview')
+  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps' | 'copilot'>('overview')
   const [expenseFilter, setExpenseFilter] = useState({
     dateFrom: '',
     dateTo: '',
@@ -1219,6 +1220,7 @@ if (showAdminDashboard) {
     { id: 'bills' as const, label: 'Bills', Icon: Receipt, show: true },
     { id: 'field-ops' as const, label: 'Field Ops', Icon: User, show: canEdit },
     { id: 'gps' as const, label: 'GPS Fields', Icon: MapPin, show: true },
+    { id: 'copilot' as const, label: 'Copilot', Icon: Leaf, show: true },
   ]
 
   return (
@@ -2116,6 +2118,9 @@ if (showAdminDashboard) {
 
           {adminActiveTab === 'gps' && user.pin && (
             <GpsMeasurementsAdmin userPin={user.pin} canEdit={canEdit} onApproved={fetchRentals} />
+          )}
+          {adminActiveTab === 'copilot' && user.pin && (
+            <CopilotSettingsAdmin userPin={user.pin} canEdit={canEdit} />
           )}
         </div>
       </div>

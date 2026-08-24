@@ -34,6 +34,7 @@ model Customer {
   rentals Rental[]
   bills   Bill[]
   gpsMeasurements GpsMeasurement[]
+  copilotSessions CopilotHarvestSession[]
 }
 
 model Rental {
@@ -123,6 +124,7 @@ model FieldOperator {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   measurements GpsMeasurement[]
+  copilotSessions CopilotHarvestSession[]
 }
 
 model GpsMeasurement {
@@ -181,4 +183,66 @@ model GpsSyncLog {
   status        String
   message       String?
   createdAt     DateTime @default(now())
+}
+
+model CopilotSettings {
+  id                           Int      @id @default(1)
+  machineName                  String   @default("Panesar G60")
+  cutterWidthM                 Float    @default(2.6)
+  effectiveWidthM              Float    @default(2.4)
+  minHarvestKmh                Float    @default(2)
+  maxHarvestKmh                Float    @default(7)
+  travelSpeedKmh               Float    @default(10)
+  minGpsAccuracyM              Float    @default(25)
+  minMoveM                     Float    @default(0.8)
+  maxJumpM                     Float    @default(40)
+  maxSpeedMps                  Float    @default(22)
+  parallelPassToleranceM       Float    @default(0.8)
+  headingTurnMinDeg            Float    @default(150)
+  headingTurnMaxDeg            Float    @default(210)
+  autoStopDelayMs              Int      @default(90000)
+  travelConfidenceThreshold    Float    @default(0.62)
+  harvestConfidenceThreshold   Float    @default(0.68)
+  possibleFieldHoldMs          Int      @default(12000)
+  updatedAt                    DateTime @updatedAt
+}
+
+model CopilotHarvestSession {
+  id              Int      @id @default(autoincrement())
+  localUuid       String   @unique
+  fieldOperatorId Int
+  fieldOperator   FieldOperator @relation(fields: [fieldOperatorId], references: [id])
+  customerId      Int?
+  customer        Customer? @relation(fields: [customerId], references: [id])
+  machine         String
+  village         String?
+  copilotState    String
+  areaSqm         Float    @default(0)
+  areaAcre        Float    @default(0)
+  areaGunta       Float    @default(0)
+  distanceMeters  Float    @default(0)
+  coverageGeoJson String?  @db.LongText
+  startedAt       DateTime?
+  stoppedAt       DateTime?
+  syncStatus      String   @default("SYNCED")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  points          CopilotGpsPoint[]
+
+  @@index([fieldOperatorId, createdAt])
+}
+
+model CopilotGpsPoint {
+  id             Int      @id @default(autoincrement())
+  sessionId      Int
+  session        CopilotHarvestSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sequenceNumber Int
+  latitude       Float
+  longitude      Float
+  accuracy       Float
+  speedKmh       Float?
+  headingDeg     Float?
+  timestamp      DateTime
+
+  @@unique([sessionId, sequenceNumber])
 }
