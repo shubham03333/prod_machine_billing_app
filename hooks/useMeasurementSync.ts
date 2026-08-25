@@ -17,7 +17,8 @@ export function useMeasurementSync(token: string | null) {
 
   const syncOne = useCallback(
     async (row: LocalMeasurement) => {
-      if (!token || !online) return row
+      const netOn = online || (typeof navigator !== 'undefined' && navigator.onLine)
+      if (!token || !netOn) return row
       if (row.inProgress || row.status !== 'COMPLETED') return row
       if (row.syncStatus === SYNC_SYNCED && row.cloudId) return row
       if (row.failCount >= GPS_SYNC_RETRY_MAX) return row
@@ -77,7 +78,8 @@ export function useMeasurementSync(token: string | null) {
   )
 
   const syncPending = useCallback(async () => {
-    if (!token || !online) return
+    const netOn = online || (typeof navigator !== 'undefined' && navigator.onLine)
+    if (!token || !netOn) return
     setSyncing(true)
     try {
       const all = await idbGetAllMeasurements()

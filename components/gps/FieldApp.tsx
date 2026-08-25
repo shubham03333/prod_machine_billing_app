@@ -387,15 +387,9 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     setTab('measure')
   }
 
-  async function finishTrack() {
-    gps.pause()
-    gps.publish(true)
-    setPhase('review')
-  }
-
-  async function saveMeasurement() {
-    if (!draftUuid) return
-    if (gps.pointsRef.current.length < GPS_MIN_POINTS_FOR_POLYGON) return
+  async function persistCompletedMeasurement(): Promise<boolean> {
+    if (!draftUuid) return false
+    if (gps.pointsRef.current.length < GPS_MIN_POINTS_FOR_POLYGON) return false
     const geo = computeMeasurementGeometry(gps.pointsRef.current)
     const farmer = await ensureFarmer()
     const stoppedAt = new Date().toISOString()
@@ -423,6 +417,31 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
         points: gps.pointsRef.current.slice(),
       }),
     )
+    return true
+  }
+
+  async function finishTrack() {
+    gps.pause()
+    gps.publish(true)
+    setPhase('review')
+    try {
+      const saved = await persistCompletedMeasurement()
+      if (saved) {
+        await sync.refresh()
+        await sync.syncPending()
+      }
+    } catch {
+      // Keep review even if farmer/cloud persist fails; Save can retry.
+    }
+  }
+
+  async function saveMeasurement() {
+    try {
+      const saved = await persistCompletedMeasurement()
+      if (!saved) return
+    } catch {
+      return
+    }
     gps.reset()
     setDraftUuid(null)
     setFarmerId(null)
@@ -431,8 +450,8 @@ export default function FieldApp({ session, onLogout }: { session: Session; onLo
     villageLookupRef.current = false
     setPhase('track')
     setTab('history')
-    sync.refresh()
-    sync.syncPending()
+    await sync.refresh()
+    await sync.syncPending()
   }
 
   async function discardMeasurement() {

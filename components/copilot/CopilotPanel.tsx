@@ -34,7 +34,7 @@ export default function CopilotPanel({
   onBack: () => void
 }) {
   const [satellite, setSatellite] = useState(false)
-  const { settings, snapshot, gpsError, localSession, syncPending } = useCopilotEngine(
+  const { settings, snapshot, gpsError, localSession, syncPending, awaitingUpload } = useCopilotEngine(
     { id: session.id, machine: session.machine, token: session.token },
     village,
   )
@@ -98,6 +98,17 @@ export default function CopilotPanel({
         {settings.machineName} · {settings.effectiveWidthM.toFixed(2)} m swath · travel {snapshot.travelConfidence.toFixed(2)} · harvest {snapshot.harvestConfidence.toFixed(2)}
         {localSession ? ` · ${localSession.syncStatus}` : ''}
       </p>
+      {awaitingUpload && (
+        <p className="text-[11px] text-center text-amber-800">
+          {mr ? 'कापणी पूर्ण. ६ सेकंदानंतर क्षेत्र थांबेल आणि इंटरनेटवर आपोआप जतन होईल.' : 'Harvest complete. Area stops in 6 seconds, then uploads when internet is available.'}
+        </p>
+      )}
+      {localSession?.syncStatus === 'SYNCING' && (
+        <p className="text-[11px] text-center text-slate-700">{mr ? 'क्लाउडवर पाठवत आहे...' : 'Uploading to cloud...'}</p>
+      )}
+      {localSession?.syncStatus === 'SYNCED' && localSession.stoppedAt && (
+        <p className="text-[11px] text-center text-green-700">{mr ? 'क्लाउडवर जतन झाले' : 'Saved to cloud'}</p>
+      )}
       <div className="shrink-0 flex gap-1.5 pb-1">
         <button type="button" onClick={() => setSatellite((s) => !s)} className="flex-1 border rounded-xl py-2.5 text-sm font-semibold">
           {satellite ? (mr ? 'नकाशा' : 'Map') : mr ? 'उपग्रह' : 'Satellite'}
