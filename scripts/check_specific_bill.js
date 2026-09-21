@@ -45,5 +45,5 @@ async function checkSpecificBill() {
     await prisma.$disconnect();
   }
 }
-
+// ok
 checkSpecificBill();
