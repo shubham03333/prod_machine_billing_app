@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { checkReadOnlyGuard } from '@/lib/auth-guard'
+import { resolveCollectorUserId } from '@/lib/payments/collector'
 
 
 export async function GET(request: NextRequest) {
@@ -10,7 +11,9 @@ export async function GET(request: NextRequest) {
       include: {
         customer: true,
         operator: true,
-        payments: true,
+        payments: {
+          include: { collectedBy: { select: { id: true, name: true } } },
+        },
         bill: true,
         gpsMeasurement: { select: { id: true, village: true } },
       },
@@ -41,7 +44,7 @@ export async function POST(request: NextRequest) {
     const denied = await checkReadOnlyGuard(request)
     if (denied) return denied
 
-    const { machineType, unitType, quantity, acreage, pricePerUnit, totalAmount, description, customerName, customerContact, customerAddress, operatorId, date, dieselCost, maintenanceCost, operatorSalary, paidAmount, paymentMode, normalHourlyRate, breakerHourlyRate, timeSlots } = await request.json()
+    const { machineType, unitType, quantity, acreage, pricePerUnit, totalAmount, description, customerName, customerContact, customerAddress, operatorId, date, dieselCost, maintenanceCost, operatorSalary, paidAmount, paymentMode, collectedByUserId, normalHourlyRate, breakerHourlyRate, timeSlots } = await request.json()
 
     if (!machineType || !unitType || !quantity || !pricePerUnit || !totalAmount || !customerName || !customerContact || !operatorId || !date) {
       return NextResponse.json({ error: 'All fields are required' }, { status: 400 })
@@ -64,6 +67,16 @@ export async function POST(request: NextRequest) {
     })
 
     const paid = parseFloat(paidAmount || 0)
+    let collectorId: number | null = null
+    if (paid > 0) {
+      if (!paymentMode) {
+        return NextResponse.json({ error: 'Payment mode is required when amount is paid' }, { status: 400 })
+      }
+      collectorId = await resolveCollectorUserId(collectedByUserId)
+      if (!collectorId) {
+        return NextResponse.json({ error: 'Select who collected this payment' }, { status: 400 })
+      }
+    }
     const total = parseFloat(totalAmount)
     let paymentStatus = 'UNPAID'
     if (paid > 0 && paid < total) {
@@ -107,7 +120,8 @@ export async function POST(request: NextRequest) {
         data: {
           rentalId: rental.id,
           amount: paid,
-          mode: paymentMode
+          mode: paymentMode,
+          collectedByUserId: collectorId,
         }
       })
     }

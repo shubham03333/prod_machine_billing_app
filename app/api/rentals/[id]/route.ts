@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkReadOnlyGuard } from "@/lib/auth-guard";
+import { resolveCollectorUserId } from "@/lib/payments/collector";
 
 export async function GET(
   request: NextRequest,
@@ -70,6 +71,7 @@ export async function PUT(
       paymentMode,
       additionalAmount,
       additionalPaymentMode,
+      collectedByUserId,
       date,
       normalHourlyRate,
       breakerHourlyRate,
@@ -186,6 +188,21 @@ export async function PUT(
       return NextResponse.json({ error: "Rental not found" }, { status: 404 });
     }
 
+    let extraCollected = additionalNum;
+    if (extraCollected <= 0 && paidAmountNum > rental.paidAmount + 0.009) {
+      extraCollected = paidAmountNum - rental.paidAmount;
+    }
+    let collectorId: number | null = null;
+    if (extraCollected > 0) {
+      collectorId = await resolveCollectorUserId(collectedByUserId);
+      if (!collectorId) {
+        return NextResponse.json(
+          { error: "Select who collected this payment" },
+          { status: 400 },
+        );
+      }
+    }
+
     await prisma.customer.update({
       where: { id: rental.customerId },
       data: {
@@ -242,31 +259,21 @@ export async function PUT(
       include: {
         operator: true,
         customer: true,
-        payments: true,
+        payments: {
+          include: { collectedBy: { select: { id: true, name: true } } },
+        },
       },
     });
 
-    if (additionalNum > 0 && additionalPaymentMode) {
+    if (extraCollected > 0) {
       await prisma.payment.create({
         data: {
           rentalId: id,
-          amount: additionalNum,
-          mode: additionalPaymentMode,
+          amount: extraCollected,
+          mode: additionalPaymentMode || paymentMode || "Cash",
+          collectedByUserId: collectorId,
         },
       });
-    }
-
-    if (paymentMode) {
-      const firstPayment = await prisma.payment.findFirst({
-        where: { rentalId: id },
-        orderBy: { id: "asc" },
-      });
-      if (firstPayment) {
-        await prisma.payment.update({
-          where: { id: firstPayment.id },
-          data: { mode: paymentMode },
-        });
-      }
     }
 
     if (updatedRental.billId) {

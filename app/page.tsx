@@ -10,6 +10,7 @@ import { FIELD_SESSION_KEY } from '@/lib/gps/constants'
 import FieldOperatorsAdmin from '@/components/gps/FieldOperatorsAdmin'
 import GpsMeasurementsAdmin from '@/components/gps/GpsMeasurementsAdmin'
 import CopilotSettingsAdmin from '@/components/copilot/CopilotSettingsAdmin'
+import OperatorCollections from '@/components/admin/OperatorCollections'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -94,6 +95,8 @@ interface Payment {
   amount: number
   mode: string
   date: string
+  collectedByUserId?: number | null
+  collectedBy?: { id: number; name: string } | null
 }
 
 interface Rental {
@@ -148,6 +151,7 @@ interface Customer {
   totalRentals: number
   lastRentalDate: Date | null
   createdAt: string
+  duplicateCount?: number
 }
 
 interface Bill {
@@ -264,6 +268,8 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [description, setDescription] = useState('')
   const [advanceAmount, setAdvanceAmount] = useState('')
   const [paymentMode, setPaymentMode] = useState('Cash')
+  const [collectedByUserId, setCollectedByUserId] = useState<number | null>(null)
+  const [additionalCollectedByUserId, setAdditionalCollectedByUserId] = useState<number | null>(null)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
   const [dieselCost, setDieselCost] = useState('')
@@ -281,6 +287,8 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   useEffect(() => {
     if (user) {
       setSelectedOperatorId(user.id)
+      setCollectedByUserId(user.id)
+      setAdditionalCollectedByUserId(user.id)
     }
   }, [user])
   const [expenseAmount, setExpenseAmount] = useState('')
@@ -302,7 +310,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [customerSearch, setCustomerSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'new-rental' | 'expenses' | 'rentals'>('new-rental')
   const [selectedRentalId, setSelectedRentalId] = useState<number | null>(null)
-  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps' | 'copilot'>('overview')
+  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps' | 'copilot' | 'collections'>('overview')
   const [expenseFilter, setExpenseFilter] = useState({
     dateFrom: '',
     dateTo: '',
@@ -321,7 +329,8 @@ const [rentalFilter, setRentalFilter] = useState({
 })
   const [searchQuery, setSearchQuery] = useState('')
   const [customerFilter, setCustomerFilter] = useState({
-    contactNumber: ''
+    contactNumber: '',
+    uniqueByPhone: false
   })
   const [editingRental, setEditingRental] = useState<Rental | null>(null)
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
@@ -398,6 +407,7 @@ const [rentalFilter, setRentalFilter] = useState({
     paymentMode: '',
     additionalAmount: '',
     additionalPaymentMode: 'Cash',
+    collectedByUserId: '',
     date: '',
     normalHourlyRate: '',
     breakerHourlyRate: '',
@@ -435,7 +445,7 @@ const [rentalFilter, setRentalFilter] = useState({
   // Reset customers page when filter changes
   useEffect(() => {
     setCustomersPage(1)
-  }, [customerFilter.contactNumber])
+  }, [customerFilter.contactNumber, customerFilter.uniqueByPhone])
 
   useEffect(() => {
     if (user) {
@@ -673,6 +683,11 @@ const fetchBills = async () => {
 
     setLoading(true)
     try {
+      if (advanceAmount && parseFloat(advanceAmount) > 0 && !collectedByUserId) {
+        setError('Select who collected this payment')
+        setLoading(false)
+        return
+      }
       const res = await fetch('/api/rentals', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
@@ -692,6 +707,7 @@ const fetchBills = async () => {
           paidAmount: advanceAmount ? parseFloat(advanceAmount) : 0,
           paymentStatus: 'UNPAID',
           paymentMode: paymentMode || undefined,
+          collectedByUserId: collectedByUserId || undefined,
           operatorId: selectedOperatorId || user.id,
           date: selectedDate,
           normalHourlyRate,
@@ -781,6 +797,7 @@ const fetchBills = async () => {
       paymentMode: rental.paymentMode || '',
       additionalAmount: '',
       additionalPaymentMode: 'Cash',
+      collectedByUserId: '',
       date: new Date(rental.date).toISOString().split('T')[0],
       normalHours,
       breakerHours,
@@ -800,6 +817,13 @@ const fetchBills = async () => {
 
     setLoading(true)
     try {
+      const extra = parseFloat(editRentalData.additionalAmount || '0') || 0
+      const paidNow = parseFloat(editRentalData.paidAmount || '0') || 0
+      if ((extra > 0 || paidNow > editingRental.paidAmount + 0.009) && !editRentalData.collectedByUserId) {
+        setError('Select who collected this payment')
+        setLoading(false)
+        return
+      }
       const res = await fetch(`/api/rentals/${editingRental.id}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json', 'x-user-pin': user?.pin || ''},
@@ -942,6 +966,10 @@ const fetchBills = async () => {
 
   const addPayment = async () => {
     if (!paymentRental || !additionalAmount || !additionalPaymentMode) return
+    if (!additionalCollectedByUserId) {
+      setError('Select who collected this payment')
+      return
+    }
     if (isReadOnlyAdmin(user)) {
       setError('Read-only admin cannot add or edit data')
       return
@@ -951,10 +979,11 @@ const fetchBills = async () => {
     try {
       const res = await fetch(`/api/rentals/${paymentRental.id}/payments`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-user-pin': user?.pin || '' },
         body: JSON.stringify({
           amount: additionalAmount,
-          mode: additionalPaymentMode
+          mode: additionalPaymentMode,
+          collectedByUserId: additionalCollectedByUserId,
         })
       })
 
@@ -1128,13 +1157,21 @@ const getExpenseCategory = (expense: Expense) => {
       if (fromDate && rentalDate < fromDate) return false
       if (toDate && rentalDate > toDate) return false
       if (rentalFilter.machine && rental.machineType !== rentalFilter.machine) return false
-      if (rentalFilter.paymentStatus && rental.paymentStatus !== rentalFilter.paymentStatus) return false
+      if (rentalFilter.paymentStatus === 'DUE') {
+        const remaining = rental.totalAmount - (rental.paidAmount || 0)
+        const dueStatus = rental.paymentStatus === 'UNPAID' || rental.paymentStatus === 'PARTIALLY_PAID'
+        if (!dueStatus && remaining <= 0.009) return false
+      } else if (rentalFilter.paymentStatus && rental.paymentStatus !== rentalFilter.paymentStatus) {
+        return false
+      }
       if (rentalFilter.contactNumber && !rental.customer.contactNumber.replace(/\s/g, '').includes(rentalFilter.contactNumber.replace(/\s/g, ''))) return false
       if (rentalFilter.customerSearch && !rental.customer.name.toLowerCase().includes(rentalFilter.customerSearch.toLowerCase())) return false
 
       return true
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+  const normalizePhone = (phone?: string) => (phone || '').replace(/\D/g, '')
 
   const filteredCustomers = (Array.isArray(customers) ? customers : [])
     .filter(customer => {
@@ -1146,6 +1183,45 @@ const getExpenseCategory = (expense: Expense) => {
       return true
     })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+
+  const displayedCustomers = (() => {
+    if (!customerFilter.uniqueByPhone) return filteredCustomers
+
+    const groups = new Map<string, Customer[]>()
+    const noPhone: Customer[] = []
+    for (const customer of filteredCustomers) {
+      const key = normalizePhone(customer.contactNumber)
+      if (!key) {
+        noPhone.push(customer)
+        continue
+      }
+      const list = groups.get(key) || []
+      list.push(customer)
+      groups.set(key, list)
+    }
+
+    const uniqueRows = Array.from(groups.values()).map((list) => {
+      const ranked = [...list].sort((a, b) => {
+        const aRent = a.lastRentalDate ? new Date(a.lastRentalDate).getTime() : 0
+        const bRent = b.lastRentalDate ? new Date(b.lastRentalDate).getTime() : 0
+        if (bRent !== aRent) return bRent - aRent
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      })
+      const primary = ranked[0]
+      const lastTimes = list.map((c) => (c.lastRentalDate ? new Date(c.lastRentalDate).getTime() : 0))
+      const maxLast = Math.max(...lastTimes)
+      return {
+        ...primary,
+        contactNumber: primary.contactNumber || list[0].contactNumber,
+        totalRevenue: list.reduce((sum, c) => sum + (c.totalRevenue || 0), 0),
+        totalRentals: list.reduce((sum, c) => sum + (c.totalRentals || 0), 0),
+        lastRentalDate: maxLast > 0 ? new Date(maxLast) : null,
+        duplicateCount: list.length,
+      }
+    })
+
+    return [...uniqueRows, ...noPhone].sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0))
+  })()
 
   const totalExpenses = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0)
 
@@ -1218,6 +1294,7 @@ if (showAdminDashboard) {
     { id: 'expenses' as const, label: 'Expenses', Icon: Wallet, show: true },
     { id: 'customers' as const, label: 'Customers', Icon: Users, show: true },
     { id: 'bills' as const, label: 'Bills', Icon: Receipt, show: true },
+    { id: 'collections' as const, label: 'Collections', Icon: Wallet, show: true },
     { id: 'field-ops' as const, label: 'Field Ops', Icon: User, show: canEdit },
     { id: 'gps' as const, label: 'GPS Fields', Icon: MapPin, show: true },
     { id: 'copilot' as const, label: 'Copilot', Icon: Leaf, show: true },
@@ -1317,12 +1394,23 @@ if (showAdminDashboard) {
                     {formatCurrency(totalPaidAmount)}
                   </p>
                 </div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRentalFilter((prev) => ({ ...prev, paymentStatus: 'DUE' }))
+                    setOverviewPage(1)
+                    document.getElementById('overview-recent-rentals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }}
+                  className={`bg-white p-4 rounded-2xl border shadow-sm min-w-0 text-left ${
+                    rentalFilter.paymentStatus === 'DUE' ? 'border-rose-400 ring-2 ring-rose-100' : 'border-slate-200'
+                  }`}
+                >
                   <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Pending</h3>
                   <p className="dash-metric text-lg font-semibold text-rose-700">
                     {formatCurrency(totalPendingAmount)}
                   </p>
-                </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Click to show unpaid and partial</p>
+                </button>
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                   <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Total Acre</h3>
                   <p className="dash-metric text-lg font-semibold text-slate-900">
@@ -1343,7 +1431,7 @@ if (showAdminDashboard) {
                 </div>
               </div>
 
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div id="overview-recent-rentals" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-slate-100">
                   <div className="flex flex-col gap-3">
                     <div className="flex justify-between items-center gap-2">
@@ -1396,10 +1484,14 @@ if (showAdminDashboard) {
                       </select>
                       <select
                         value={rentalFilter.paymentStatus}
-                        onChange={(e) => setRentalFilter({...rentalFilter, paymentStatus: e.target.value})}
+                        onChange={(e) => {
+                          setRentalFilter({...rentalFilter, paymentStatus: e.target.value})
+                          setOverviewPage(1)
+                        }}
                         className="dash-input flex-1 sm:flex-none"
                       >
                         <option value="">All Payment Status</option>
+                        <option value="DUE">Unpaid + Partial</option>
                         <option value="UNPAID">Unpaid</option>
                         <option value="PARTIALLY_PAID">Partially Paid</option>
                         <option value="PAID">Paid</option>
@@ -1515,6 +1607,8 @@ if (showAdminDashboard) {
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         setPaymentRental(rental)
+                                        setShowPaymentModal(true)
+                                        setAdditionalCollectedByUserId(user?.id ?? null)
                                       }}
                                       className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
                                   >
@@ -1944,6 +2038,17 @@ if (showAdminDashboard) {
                     placeholder="Contact Number"
                     className="dash-input w-full sm:w-auto"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setCustomerFilter((prev) => ({ ...prev, uniqueByPhone: !prev.uniqueByPhone }))}
+                    className={`px-3 py-2 rounded-lg text-sm border ${
+                      customerFilter.uniqueByPhone
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Unique by phone
+                  </button>
                 </div>
               </div>
               <div className="overflow-x-auto lg:overflow-hidden">
@@ -1960,9 +2065,16 @@ if (showAdminDashboard) {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-slate-100">
-                    {filteredCustomers.slice((customersPage - 1) * 10, customersPage * 10).map((customer) => (
-                      <tr key={customer.id} onClick={() => setSelectedCustomer(customer)} className="cursor-pointer hover:bg-slate-50/80">
-                        <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[10rem]" title={customer.name}>{customer.name}</td>
+                    {displayedCustomers.slice((customersPage - 1) * 10, customersPage * 10).map((customer) => (
+                      <tr key={`${customer.id}-${normalizePhone(customer.contactNumber) || 'none'}`} onClick={() => setSelectedCustomer(customer)} className="cursor-pointer hover:bg-slate-50/80">
+                        <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[10rem]" title={customer.name}>
+                          <span>{customer.name}</span>
+                          {customerFilter.uniqueByPhone && (customer.duplicateCount || 1) > 1 && (
+                            <span className="ml-2 text-[11px] font-medium text-slate-500">
+                              {customer.duplicateCount} records
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm" title={customer.contactNumber}>{customer.contactNumber}</td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm truncate max-w-[12rem] text-slate-600" title={customer.address || 'N/A'}>{customer.address || 'N/A'}</td>
                         <td className="px-3 py-3 whitespace-nowrap text-sm text-emerald-700 font-semibold">
@@ -1991,10 +2103,10 @@ if (showAdminDashboard) {
                     ))}
                   </tbody>
                 </table>
-                {customers.length > 10 && (
+                {displayedCustomers.length > 10 && (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 bg-slate-50/80 border-t border-slate-100">
                     <div className="text-sm text-slate-600">
-                      Showing {Math.min((customersPage - 1) * 10 + 1, customers.length)} to {Math.min(customersPage * 10, customers.length)} of {customers.length} customers
+                      Showing {Math.min((customersPage - 1) * 10 + 1, displayedCustomers.length)} to {Math.min(customersPage * 10, displayedCustomers.length)} of {displayedCustomers.length} {customerFilter.uniqueByPhone ? 'unique customers' : 'customers'}
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
@@ -2005,11 +2117,11 @@ if (showAdminDashboard) {
                         Previous
                       </button>
                       <span className="text-sm text-slate-600">
-                        Page {customersPage} of {Math.ceil(customers.length / 10)}
+                        Page {customersPage} of {Math.ceil(displayedCustomers.length / 10)}
                       </span>
                       <button
-                        onClick={() => setCustomersPage(Math.min(Math.ceil(customers.length / 10), customersPage + 1))}
-                        disabled={customersPage === Math.ceil(customers.length / 10)}
+                        onClick={() => setCustomersPage(Math.min(Math.ceil(displayedCustomers.length / 10), customersPage + 1))}
+                        disabled={customersPage === Math.ceil(displayedCustomers.length / 10)}
                         className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
                       >
                         Next
@@ -2113,7 +2225,7 @@ if (showAdminDashboard) {
           )}
 
           {adminActiveTab === 'field-ops' && user.pin && (
-            <FieldOperatorsAdmin userPin={user.pin} />
+            <FieldOperatorsAdmin userPin={user.pin} onStaffOperatorCreated={fetchOperators} />
           )}
 
           {adminActiveTab === 'gps' && user.pin && (
@@ -2121,6 +2233,9 @@ if (showAdminDashboard) {
           )}
           {adminActiveTab === 'copilot' && user.pin && (
             <CopilotSettingsAdmin userPin={user.pin} canEdit={canEdit} />
+          )}
+          {adminActiveTab === 'collections' && user.pin && (
+            <OperatorCollections userPin={user.pin} canEdit={canEdit} />
           )}
         </div>
       </div>
@@ -2344,7 +2459,23 @@ if (showAdminDashboard) {
                 >
                   <option value="Cash">Cash</option>
                   <option value="Online">Online</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="UPI">UPI</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Collected by</label>
+                <select
+                  value={editRentalData.collectedByUserId}
+                  onChange={(e) => setEditRentalData({...editRentalData, collectedByUserId: e.target.value})}
+                  className="w-full p-2 border rounded-lg"
+                >
+                  <option value="">Select operator</option>
+                  {operators.map((operator) => (
+                    <option key={operator.id} value={operator.id}>{operator.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Required when recording a new payment on this rental.</p>
               </div>
             </div>
 
@@ -2550,12 +2681,12 @@ if (showAdminDashboard) {
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
-              {rentals.filter(rental => rental.customer.contactNumber === selectedCustomer.contactNumber).length === 0 ? (
+              {rentals.filter(rental => normalizePhone(rental.customer.contactNumber) === normalizePhone(selectedCustomer.contactNumber) && !!normalizePhone(selectedCustomer.contactNumber)).length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No rentals found for this customer.</p>
               ) : (
                 <div className="space-y-4">
                   {rentals
-                    .filter(rental => rental.customer.contactNumber === selectedCustomer.contactNumber)
+                    .filter(rental => normalizePhone(rental.customer.contactNumber) === normalizePhone(selectedCustomer.contactNumber) && !!normalizePhone(selectedCustomer.contactNumber))
                     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                     .map((rental) => (
                       <div key={rental.id} className="border rounded-lg p-4 bg-gray-50">
@@ -2656,14 +2787,28 @@ if (showAdminDashboard) {
                 >
                   <option value="Cash">Cash</option>
                   <option value="Online">Online</option>
-                 
+                  <option value="Cheque">Cheque</option>
+                  <option value="UPI">UPI</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Collected by</label>
+                <select
+                  value={additionalCollectedByUserId || ''}
+                  onChange={(e) => setAdditionalCollectedByUserId(e.target.value ? parseInt(e.target.value) : null)}
+                  className="w-full p-2 border rounded-lg"
+                >
+                  <option value="">Select operator</option>
+                  {operators.map((operator) => (
+                    <option key={operator.id} value={operator.id}>{operator.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
             <div className="flex gap-4 mt-6">
               <button
                 onClick={addPayment}
-                disabled={loading || !additionalAmount || parseFloat(additionalAmount) <= 0}
+                disabled={loading || !additionalAmount || parseFloat(additionalAmount) <= 0 || !additionalCollectedByUserId}
                 className="flex-1 bg-green-500 text-white p-2 rounded-lg disabled:bg-gray-300"
               >
                 {loading ? 'Adding...' : 'Add Payment'}
@@ -2674,6 +2819,7 @@ if (showAdminDashboard) {
                   setPaymentRental(null)
                   setAdditionalAmount('')
                   setAdditionalPaymentMode('Cash')
+                  setAdditionalCollectedByUserId(user?.id ?? null)
                 }}
                 className="flex-1 bg-gray-500 text-white p-2 rounded-lg"
               >
@@ -2700,7 +2846,7 @@ if (showAdminDashboard) {
                   <div className="space-y-2">
                     {selectedRentalForBreakdown.payments.map((payment) => (
                       <div key={payment.id} className="flex justify-between text-sm">
-                        <span>{new Date(payment.date).toLocaleDateString()} - {payment.mode}</span>
+                        <span>{new Date(payment.date).toLocaleDateString()} - {payment.mode}{payment.collectedBy?.name ? ` · ${payment.collectedBy.name}` : ''}</span>
                         <span className="font-semibold text-green-600">{formatCurrency(payment.amount)}</span>
                       </div>
                     ))}
@@ -3052,6 +3198,20 @@ if (showAdminDashboard) {
                 <option value="Online">Online</option>
                 <option value="Cheque">Cheque</option>
                 <option value="UPI">UPI</option>
+              </select>
+            </div>
+
+            <div className="mb-6">
+              <label className={`${glassLabel} flex items-center gap-2`}><User size={16} /> Payment collected by</label>
+              <select
+                value={collectedByUserId || ''}
+                onChange={(e) => setCollectedByUserId(e.target.value ? parseInt(e.target.value) : null)}
+                className="glass-input"
+              >
+                <option value="">Select operator</option>
+                {operators.map((operator) => (
+                  <option key={operator.id} value={operator.id}>{operator.name}</option>
+                ))}
               </select>
             </div>
 

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { checkReadOnlyGuard } from '@/lib/auth-guard'
 import { requireAdminEditor } from '@/lib/field-auth'
 import { hashPin, isValidOperatorPin, verifyPin } from '@/lib/gps/crypto'
+import { cashTransferDb } from '@/lib/payments/transfer-db'
 
 export const dynamic = 'force-dynamic'
 
@@ -69,6 +70,65 @@ export async function PATCH(
     })
   } catch (error) {
     console.error('Update field operator error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const denied = await checkReadOnlyGuard(request)
+  if (denied) return denied
+  const auth = await requireAdminEditor(request)
+  if ('error' in auth) return auth.error
+
+  try {
+    const { id } = await params
+    const operatorDbId = parseInt(id, 10)
+    if (!Number.isFinite(operatorDbId)) {
+      return NextResponse.json({ error: 'Invalid operator' }, { status: 400 })
+    }
+
+    const row = await prisma.fieldOperator.findUnique({
+      where: { id: operatorDbId },
+    })
+    if (!row) {
+      return NextResponse.json({ error: 'Field operator not found' }, { status: 404 })
+    }
+
+    const [measurementCount, copilotCount, rentalCount, expenseCount] = await Promise.all([
+      prisma.gpsMeasurement.count({ where: { fieldOperatorId: operatorDbId } }),
+      prisma.copilotHarvestSession.count({ where: { fieldOperatorId: operatorDbId } }),
+      prisma.rental.count({ where: { operatorId: row.linkedUserId } }),
+      prisma.expense.count({ where: { operatorId: row.linkedUserId } }),
+    ])
+
+    if (measurementCount || copilotCount || rentalCount || expenseCount) {
+      return NextResponse.json(
+        {
+          error: `Cannot delete ${row.name}. They still have ${measurementCount} GPS job(s), ${copilotCount} copilot session(s), ${rentalCount} rental(s), and ${expenseCount} expense(s). Deactivate them instead.`,
+        },
+        { status: 409 },
+      )
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { collectedByUserId: row.linkedUserId },
+        data: { collectedByUserId: null },
+      })
+      await cashTransferDb().updateMany({
+        where: { createdByUserId: row.linkedUserId },
+        data: { createdByUserId: null },
+      })
+      await tx.fieldOperator.delete({ where: { id: operatorDbId } })
+      await tx.user.delete({ where: { id: row.linkedUserId } })
+    })
+
+    return NextResponse.json({ ok: true })
+  } catch (error) {
+    console.error('Delete field operator error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

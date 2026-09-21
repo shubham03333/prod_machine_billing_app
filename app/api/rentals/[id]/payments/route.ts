@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkReadOnlyGuard } from "@/lib/auth-guard";
+import { resolveCollectorUserId } from "@/lib/payments/collector";
 
 export async function POST(
     request: NextRequest,
@@ -17,11 +18,19 @@ export async function POST(
       return NextResponse.json({ error: "Invalid rental ID" }, { status: 400 });
     }
 
-    const { amount, mode } = await request.json();
+    const { amount, mode, collectedByUserId } = await request.json();
 
     if (!amount || !mode) {
       return NextResponse.json(
         { error: "Amount and mode are required" },
+        { status: 400 },
+      );
+    }
+
+    const collectorId = await resolveCollectorUserId(collectedByUserId);
+    if (!collectorId) {
+      return NextResponse.json(
+        { error: "Select who collected this payment" },
         { status: 400 },
       );
     }
@@ -48,6 +57,7 @@ export async function POST(
         rentalId,
         amount: parseFloat(amount),
         mode,
+        collectedByUserId: collectorId,
       },
     });
 
@@ -67,7 +77,9 @@ export async function POST(
       include: {
         customer: true,
         operator: true,
-        payments: true,
+        payments: {
+          include: { collectedBy: { select: { id: true, name: true } } },
+        },
         bill: true,
       },
     });

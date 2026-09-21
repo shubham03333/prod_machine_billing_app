@@ -21,6 +21,10 @@ model User {
   rentals  Rental[]
   expenses Expense[]
   fieldOperator FieldOperator?
+  collectedPayments Payment[] @relation("PaymentCollector")
+  cashTransfersFrom OperatorCashTransfer[] @relation("CashTransferFrom")
+  cashTransfersTo OperatorCashTransfer[] @relation("CashTransferTo")
+  cashTransfersRecorded OperatorCashTransfer[] @relation("CashTransferCreatedBy")
 }
 
 model Customer {
@@ -88,12 +92,31 @@ model Expense {
 }
 
 model Payment {
-  id        Int      @id @default(autoincrement())
-  rentalId  Int
-  rental    Rental   @relation(fields: [rentalId], references: [id])
-  amount    Float
-  mode      String   // 'Cash', 'Online', 'Cheque', 'UPI'
-  date      DateTime @default(now())
+  id                Int      @id @default(autoincrement())
+  rentalId          Int
+  rental            Rental   @relation(fields: [rentalId], references: [id])
+  amount            Float
+  mode              String   // 'Cash', 'Online', 'Cheque', 'UPI'
+  date              DateTime @default(now())
+  collectedByUserId Int?
+  collectedBy       User?    @relation("PaymentCollector", fields: [collectedByUserId], references: [id])
+}
+
+model OperatorCashTransfer {
+  id               Int      @id @default(autoincrement())
+  fromUserId       Int
+  fromUser         User     @relation("CashTransferFrom", fields: [fromUserId], references: [id])
+  toUserId         Int
+  toUser           User     @relation("CashTransferTo", fields: [toUserId], references: [id])
+  amount           Float
+  note             String?
+  date             DateTime @default(now())
+  createdByUserId  Int?
+  createdBy        User?    @relation("CashTransferCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt        DateTime @default(now())
+
+  @@index([fromUserId, createdAt])
+  @@index([toUserId, createdAt])
 }
 
 model Bill {
