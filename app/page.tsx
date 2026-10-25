@@ -20,6 +20,16 @@ const MACHINES = [
 
 const UNITS = ['hourly', 'trip', 'acre', 'guntha']
 
+type PriceBook = {
+  [machine: string]: { [unit: string]: number | '' }
+}
+
+function numericPrice(value: number | '' | undefined): number {
+  if (value === '' || value == null) return 0
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
 const parseQuantity = (input: string, unit: string) => {
   const trimmed = input.trim();
   const hasUnits = /acre|guntha/i.test(trimmed);
@@ -304,7 +314,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [operatorRentalSearch, setOperatorRentalSearch] = useState('')
   const [mobileError, setMobileError] = useState('')
   const [filter, setFilter] = useState('today')
-  const [prices, setPrices] = useState(STANDARD_PRICES)
+  const [prices, setPrices] = useState<PriceBook>(STANDARD_PRICES)
   const [showEditRates, setShowEditRates] = useState(false)
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [customerSearch, setCustomerSearch] = useState('')
@@ -656,7 +666,7 @@ const fetchBills = async () => {
       return
     }
 
-    let pricePerUnit = prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]]
+    let pricePerUnit = numericPrice(prices[selectedMachine]?.[selectedUnit])
     let totalAmount: number
     let normalRate: number | undefined
     let breakerRate: number | undefined
@@ -3072,6 +3082,17 @@ if (showAdminDashboard) {
               <Plus size={20} /> Add New Rental
             </h2>
 
+            <div className="mb-6">
+              <label className={`${glassLabel} flex items-center gap-2`}><Calendar size={16} /> Date of Rental{requiredMark}</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="glass-input"
+                required
+              />
+            </div>
+
             {/* Customer Selection */}
             <div className="mb-6 p-3 sm:p-4 rounded-2xl bg-gray-50 border border-gray-200 min-w-0">
               <h3 className="text-lg font-medium mb-3 flex items-center gap-2"><User size={18} /> Customer Information</h3>
@@ -3215,17 +3236,6 @@ if (showAdminDashboard) {
               </select>
             </div>
 
-            <div className="mb-6">
-              <label className={`${glassLabel} flex items-center gap-2`}><Calendar size={16} /> Date of Rental{requiredMark}</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="glass-input"
-                required
-              />
-            </div>
-
             {/* Additional Costs */}
             {/* <div className="mb-6">
               <h3 className="text-lg font-medium mb-3">Additional Costs (Optional)</h3>
@@ -3341,15 +3351,22 @@ if (showAdminDashboard) {
                               <label className="block text-sm font-medium mb-1 capitalize">{unit}</label>
                               <input
                                 type="number"
-                                value={prices[machine.id as keyof typeof prices][unit as keyof typeof prices[keyof typeof prices]]}
+                                value={prices[machine.id]?.[unit] ?? ''}
                                 onChange={(e) => {
-                                  const newPrices = { ...prices }
-                                  const newValue = parseInt(e.target.value) || 0
-                                  newPrices[machine.id as keyof typeof prices][unit as keyof typeof prices[keyof typeof prices]] = newValue
-                                  if (machine.id === 'harvester' && unit === 'acre') {
-                                    newPrices.harvester.guntha = Math.round(newValue / 40)
+                                  const raw = e.target.value
+                                  const current = { ...(prices[machine.id] || {}) }
+                                  if (raw === '') {
+                                    current[unit] = ''
+                                    setPrices({ ...prices, [machine.id]: current })
+                                    return
                                   }
-                                  setPrices(newPrices)
+                                  const newValue = parseInt(raw, 10)
+                                  if (Number.isNaN(newValue)) return
+                                  current[unit] = newValue
+                                  if (machine.id === 'harvester' && unit === 'acre') {
+                                    current.guntha = Math.round(newValue / 40)
+                                  }
+                                  setPrices({ ...prices, [machine.id]: current })
                                 }}
                                 className="glass-input"
                                 min="0"
@@ -3532,7 +3549,7 @@ if (showAdminDashboard) {
                         </div>
                       )}
                       <div className="text-lg font-semibold text-center p-2 rounded-xl bg-green-50">
-                        Total Amount: {selectedMachine === 'excavator' && selectedUnit === 'hourly' ? formatCurrency(timeSlots.reduce((sum, slot) => sum + slot.calculatedAmount, 0)) : formatCurrency(quantity * prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]])}
+                        Total Amount: {selectedMachine === 'excavator' && selectedUnit === 'hourly' ? formatCurrency(timeSlots.reduce((sum, slot) => sum + slot.calculatedAmount, 0)) : formatCurrency(quantity * numericPrice(prices[selectedMachine]?.[selectedUnit]))}
                       </div>
                     </div>
                     <button
@@ -3579,7 +3596,7 @@ if (showAdminDashboard) {
                   <div className="flex justify-between items-center">
                     <span>Rate per {selectedUnit}:</span>
                     <span className="font-semibold">
-                      {formatCurrency(prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]])}
+                      {formatCurrency(numericPrice(prices[selectedMachine]?.[selectedUnit]))}
                     </span>
                   </div>
                 )}
@@ -3602,7 +3619,7 @@ if (showAdminDashboard) {
                   <div className="flex justify-between items-center mt-2">
                     <span>Total Amount:</span>
                     <span className="text-xl font-bold text-green-600">
-                      {formatCurrency(quantity * prices[selectedMachine as keyof typeof prices][selectedUnit as keyof typeof prices[keyof typeof prices]])}
+                      {formatCurrency(quantity * numericPrice(prices[selectedMachine]?.[selectedUnit]))}
                     </span>
                   </div>
                 )}
