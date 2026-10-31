@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Trash2 } from 'lucide-react'
 
 type OperatorTotal = {
   operatorId: number
@@ -51,8 +51,10 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [paymentToDelete, setPaymentToDelete] = useState<CollectionRow | null>(null)
 
   async function load() {
     setLoading(true)
@@ -109,6 +111,28 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
       setError(err instanceof Error ? err.message : 'Handover failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function confirmDeletePayment() {
+    if (!canEdit || !paymentToDelete) return
+    setDeleting(true)
+    setError('')
+    setMessage('')
+    try {
+      const res = await fetch(`/api/payments/${paymentToDelete.id}`, {
+        method: 'DELETE',
+        headers: { 'x-user-pin': userPin },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Delete failed')
+      setPaymentToDelete(null)
+      setMessage('Payment deleted.')
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -264,6 +288,7 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
                 <th className="text-left px-4 py-2">Customer</th>
                 <th className="text-left px-4 py-2">Mode</th>
                 <th className="text-right px-4 py-2">Amount</th>
+                {canEdit && <th className="text-right px-4 py-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -274,11 +299,23 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
                   <td className="px-4 py-2">{row.customerName}</td>
                   <td className="px-4 py-2">{row.mode}</td>
                   <td className="px-4 py-2 text-right font-semibold text-emerald-700">{formatCurrency(row.amount)}</td>
+                  {canEdit && (
+                    <td className="px-4 py-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentToDelete(row)}
+                        className="inline-flex p-1.5 rounded-lg text-red-600 hover:bg-red-50"
+                        title="Delete payment"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
               {visible.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={canEdit ? 6 : 5} className="px-4 py-8 text-center text-slate-500">
                     {loading ? 'Loading...' : 'No payments for this view.'}
                   </td>
                 </tr>
@@ -287,6 +324,35 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
           </table>
         </div>
       </div>
+
+      {paymentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-lg w-full max-w-md p-5">
+            <h3 className="text-lg font-semibold text-slate-900">Delete this payment?</h3>
+            <p className="text-sm text-slate-600 mt-2">
+              This removes {formatCurrency(paymentToDelete.amount)} collected by {paymentToDelete.operatorName || 'an operator'} from {paymentToDelete.customerName}. The rental paid amount will be reduced by the same amount.
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setPaymentToDelete(null)}
+                disabled={deleting}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeletePayment()}
+                disabled={deleting}
+                className="px-3 py-2 rounded-lg bg-red-600 text-white text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
