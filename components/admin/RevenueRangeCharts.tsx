@@ -85,7 +85,7 @@ export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[]
       key,
       amount,
       label: grain === 'day'
-        ? `${Number(key.slice(8))} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(key.slice(5, 7)) - 1]}`
+        ? String(Number(key.slice(8)))
         : `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(key.slice(5, 7)) - 1]} ${key.slice(2, 4)}`,
     }))
 
