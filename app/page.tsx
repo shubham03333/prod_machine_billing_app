@@ -1781,66 +1781,72 @@ if (showAdminDashboard) {
           )}
 
           {adminActiveTab === 'add-expense' && (
-            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-sm mb-6">
-              <h2 className="text-lg font-semibold mb-1 text-slate-900">Add Expense</h2>
-              <p className="text-sm text-slate-500 mb-5">Record diesel, maintenance, salary, or other costs.</p>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Date</label>
-                  <input
-                    type="date"
-                    value={expenseDate}
-                    onChange={(e) => setExpenseDate(e.target.value)}
-                    className="dash-input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Description</label>
-                  <input
-                    type="text"
-                    value={expenseDescription}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setExpenseDescription(value);
-                      if (value.trim() !== '') {
-                        setExpenseDieselCost('');
-                        setExpenseMaintenanceCost('');
-                        setExpenseOperatorSalary('');
-                      }
-                    }}
-                    placeholder="Enter expense description"
-                    className="dash-input w-full"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Amount</label>
-                  <input
-                    type="number"
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                    placeholder="0"
-                    className="dash-input w-full"
-                    min="0"
-                  />
-                </div>
-                {user.role === 'admin' && (
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-3">
+                <h2 className="text-lg font-semibold text-slate-900">Add Expense</h2>
+                <p className="text-xs text-slate-500">Diesel, maintenance, salary, or other costs</p>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Operator</label>
-                    <select
-                      value={selectedOperatorId || ''}
-                      onChange={(e) => setSelectedOperatorId(e.target.value ? parseInt(e.target.value) : null)}
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Date</label>
+                    <input
+                      type="date"
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
                       className="dash-input w-full"
-                    >
-                      <option value="">Select Operator</option>
-                      {operators.map((op) => (
-                        <option key={op.id} value={op.id}>{op.name}</option>
-                      ))}
-                    </select>
+                    />
                   </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {user.role === 'admin' && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1 text-slate-700">Operator</label>
+                      <select
+                        value={selectedOperatorId || ''}
+                        onChange={(e) => setSelectedOperatorId(e.target.value ? parseInt(e.target.value) : null)}
+                        className="dash-input w-full"
+                      >
+                        <option value="">Select Operator</option>
+                        {operators.map((op) => (
+                          <option key={op.id} value={op.id}>{op.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Diesel Cost (Optional)</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Description</label>
+                    <input
+                      type="text"
+                      value={expenseDescription}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setExpenseDescription(value);
+                        if (value.trim() !== '') {
+                          setExpenseDieselCost('');
+                          setExpenseMaintenanceCost('');
+                          setExpenseOperatorSalary('');
+                        }
+                      }}
+                      placeholder="Enter expense description"
+                      className="dash-input w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Amount</label>
+                    <input
+                      type="number"
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      placeholder="0"
+                      className="dash-input w-full"
+                      min="0"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Diesel</label>
                     <input
                       type="number"
                       value={expenseDieselCost}
@@ -1852,7 +1858,7 @@ if (showAdminDashboard) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Maintenance Cost (Optional)</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Maintenance</label>
                     <input
                       type="number"
                       value={expenseMaintenanceCost}
@@ -1864,7 +1870,7 @@ if (showAdminDashboard) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Operator Salary (Optional)</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Salary</label>
                     <input
                       type="number"
                       value={expenseOperatorSalary}
@@ -1876,7 +1882,7 @@ if (showAdminDashboard) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1.5 text-slate-700">Driver Drink Cost (Optional)</label>
+                    <label className="block text-xs font-medium mb-1 text-slate-700">Drink</label>
                     <input
                       type="number"
                       value={expenseDriverDrinkCost}
@@ -1888,25 +1894,25 @@ if (showAdminDashboard) {
                     />
                   </div>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex flex-wrap gap-2">
                 <button
                   onClick={saveExpense}
                   disabled={loading || (!expenseDescription && !expenseAmount && !expenseDieselCost && !expenseMaintenanceCost && !expenseOperatorSalary && !expenseDriverDrinkCost) || (user.role === 'admin' && !selectedOperatorId)}
-                  className="flex-1 bg-slate-900 hover:bg-slate-800 text-white p-3 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed font-medium"
+                  className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed font-medium text-sm"
                 >
                   {loading ? 'Saving...' : 'Save Expense'}
                 </button>
                 <button
                   onClick={() => setExpenseDescription('jcb ' + expenseDescription)}
-                  className="sm:w-auto bg-amber-500 text-white px-4 p-3 rounded-lg hover:bg-amber-600 font-medium"
+                  className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 font-medium text-sm"
                 >
                   JCB Expense
                 </button>
                 </div>
               </div>
-              <div className="mt-8 pt-6 border-t border-slate-100">
-                <h3 className="text-base font-semibold mb-3 text-slate-900">Latest Expenses</h3>
-                <div className="space-y-3">
+              <div className="mt-4 pt-3 border-t border-slate-100">
+                <h3 className="text-sm font-semibold mb-2 text-slate-900">Latest Expenses</h3>
+                <div className="space-y-2">
                   {expenses.length === 0 ? (
                     <p className="text-slate-500 text-sm">No expenses recorded yet.</p>
                   ) : (
@@ -1914,15 +1920,12 @@ if (showAdminDashboard) {
                       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                       .slice(0, 3)
                       .map((expense) => (
-                        <div key={expense.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                          <div className="flex justify-between items-start mb-2 gap-3">
-                            <div className="font-medium text-slate-900">{expense.description}</div>
-                            <div className="font-semibold text-rose-700 shrink-0">{formatCurrency(expense.amount)}</div>
+                        <div key={expense.id} className="px-3 py-2 bg-slate-50 rounded-lg border border-slate-100 flex justify-between items-center gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm text-slate-900 truncate">{expense.description}</div>
+                            <div className="text-xs text-slate-500">{expense.operator.name} · {formatDateDDMMYYYY(expense.date)}</div>
                           </div>
-                          <div className="text-sm text-slate-500">
-                            <div>Operator: {expense.operator.name}</div>
-                            <div>Date: {new Date(expense.date).toLocaleDateString()}</div>
-                          </div>
+                          <div className="font-semibold text-sm text-rose-700 shrink-0">{formatCurrency(expense.amount)}</div>
                         </div>
                       ))
                   )}
