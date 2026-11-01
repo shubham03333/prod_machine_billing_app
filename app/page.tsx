@@ -13,6 +13,7 @@ import CopilotSettingsAdmin from '@/components/copilot/CopilotSettingsAdmin'
 import OperatorCollections from '@/components/admin/OperatorCollections'
 import RevenueRangeCharts from '@/components/admin/RevenueRangeCharts'
 import ExpenseRangeCharts from '@/components/admin/ExpenseRangeCharts'
+import DayFilterCalendar, { dayKey } from '@/components/admin/DayFilterCalendar'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -86,6 +87,10 @@ const formatDateDDMMYYYY = (date: string | Date) => {
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 };
+
+function rentalCollectors(rental: { payments?: Payment[] }) {
+  return Array.from(new Set((rental.payments || []).map((payment) => payment.collectedBy?.name).filter((name): name is string => !!name)))
+}
 
 interface User {
   id: number
@@ -337,6 +342,7 @@ const [rentalFilter, setRentalFilter] = useState({
   dateTo: '',
   machine: '',
   paymentStatus: '',
+  collectedBy: '',
   contactNumber: '',
   customerSearch: '',
   addressSearch: ''
@@ -1148,12 +1154,9 @@ const getExpenseCategory = (expense: Expense) => {
 
   const filteredExpenses = (Array.isArray(expenses) ? expenses : [])
     .filter(expense => {
-      const expenseDate = new Date(expense.date)
-      const fromDate = expenseFilter.dateFrom ? new Date(expenseFilter.dateFrom) : null
-      const toDate = expenseFilter.dateTo ? new Date(expenseFilter.dateTo) : null
-
-      if (fromDate && expenseDate < fromDate) return false
-      if (toDate && expenseDate > toDate) return false
+      const expenseDay = dayKey(expense.date)
+      if (expenseFilter.dateFrom && expenseDay < expenseFilter.dateFrom) return false
+      if (expenseFilter.dateTo && expenseDay > expenseFilter.dateTo) return false
       if (expenseFilter.category && getExpenseCategory(expense) !== expenseFilter.category) return false
       if (expenseFilter.operator && expense.operator.name !== expenseFilter.operator) return false
       if (expenseFilter.jcbFilter && !expense.description.toLowerCase().startsWith('jcb')) return false
@@ -1164,12 +1167,9 @@ const getExpenseCategory = (expense: Expense) => {
 
   const filteredRentals = (rentals || [])
     .filter(rental => {
-      const rentalDate = new Date(rental.date)
-      const fromDate = rentalFilter.dateFrom ? new Date(rentalFilter.dateFrom) : null
-      const toDate = rentalFilter.dateTo ? new Date(rentalFilter.dateTo) : null
-
-      if (fromDate && rentalDate < fromDate) return false
-      if (toDate && rentalDate > toDate) return false
+      const rentalDay = dayKey(rental.date)
+      if (rentalFilter.dateFrom && rentalDay < rentalFilter.dateFrom) return false
+      if (rentalFilter.dateTo && rentalDay > rentalFilter.dateTo) return false
       if (rentalFilter.machine && rental.machineType !== rentalFilter.machine) return false
       if (rentalFilter.paymentStatus === 'DUE') {
         const status = (rental.paymentStatus || '').toUpperCase()
@@ -1177,6 +1177,7 @@ const getExpenseCategory = (expense: Expense) => {
       } else if (rentalFilter.paymentStatus && rental.paymentStatus !== rentalFilter.paymentStatus) {
         return false
       }
+      if (rentalFilter.collectedBy && !rentalCollectors(rental).includes(rentalFilter.collectedBy)) return false
       if (rentalFilter.contactNumber && !rental.customer.contactNumber.replace(/\s/g, '').includes(rentalFilter.contactNumber.replace(/\s/g, ''))) return false
       if (rentalFilter.customerSearch && !rental.customer.name.toLowerCase().includes(rentalFilter.customerSearch.toLowerCase())) return false
 
@@ -1397,6 +1398,8 @@ if (showAdminDashboard) {
 
               {overviewSubTab === 'rentals' && (
             <>
+              <div className="lg:flex lg:items-start lg:gap-4 mb-6">
+              <div className="flex-1 min-w-0">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                   <div className="flex items-center justify-between mb-3">
@@ -1427,7 +1430,7 @@ if (showAdminDashboard) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                   <h3 className="text-xs font-medium text-slate-500 mb-1 whitespace-nowrap">Paid</h3>
                   <p className="dash-metric text-lg font-semibold text-emerald-700">
@@ -1470,6 +1473,16 @@ if (showAdminDashboard) {
                     {totalBreakerHours.toFixed(2)}
                   </p>
                 </div>
+              </div>
+              </div>
+              <DayFilterCalendar
+                markedDates={(rentals || []).map((rental) => dayKey(rental.date))}
+                selectedDate={rentalFilter.dateFrom && rentalFilter.dateFrom === rentalFilter.dateTo ? rentalFilter.dateFrom : ''}
+                onSelect={(date) => {
+                  setRentalFilter((prev) => ({ ...prev, dateFrom: date, dateTo: date }))
+                  setOverviewPage(1)
+                }}
+              />
               </div>
 
               <div id="overview-recent-rentals" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -1537,6 +1550,19 @@ if (showAdminDashboard) {
                         <option value="PARTIALLY_PAID">Partially Paid</option>
                         <option value="PAID">Paid</option>
                       </select>
+                      <select
+                        value={rentalFilter.collectedBy}
+                        onChange={(e) => {
+                          setRentalFilter({...rentalFilter, collectedBy: e.target.value})
+                          setOverviewPage(1)
+                        }}
+                        className="dash-input flex-1 sm:flex-none min-w-0 max-w-[10rem]"
+                      >
+                        <option value="">All collectors</option>
+                        {Array.from(new Set((rentals || []).flatMap((rental) => rentalCollectors(rental)))).sort().map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
                       <div className="relative flex-1 sm:flex-none min-w-0">
                         <input
                           type="text"
@@ -1589,18 +1615,19 @@ if (showAdminDashboard) {
                 <table className="w-full table-fixed">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="w-[4%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">#</th>
-                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
-                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
-                        <th className="w-[10%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
-                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Qty</th>
-                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
-                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
-                        <th className="w-[10%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                        <th className="w-[3%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">#</th>
+                        <th className="w-[7%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                        <th className="w-[7%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
+                        <th className="w-[8%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
+                        <th className="w-[8%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Collected</th>
+                        <th className="w-[9%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
+                        <th className="w-[8%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
+                        <th className="w-[7%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Qty</th>
+                        <th className="w-[8%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                        <th className="w-[7%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
+                        <th className="w-[7%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="w-[8%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
+                        <th className="w-[9%] px-1 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
@@ -1614,6 +1641,9 @@ if (showAdminDashboard) {
                           </td>
                           <td className="px-1.5 py-2 text-xs capitalize truncate" title={rental.machineType}>{rental.machineType === 'excavator' ? 'JCB' : rental.machineType}</td>
                           <td className="px-1.5 py-2 text-xs truncate" title={rental.operator.name}>{rental.operator.name}</td>
+                          <td className="px-1 py-2 text-xs truncate" title={rentalCollectors(rental).join(', ') || '—'}>
+                            {rentalCollectors(rental).join(', ') || '—'}
+                          </td>
                           <td className="px-1.5 py-2 text-xs truncate" title={rental.customer.name}>{rental.customer.name}</td>
                           <td className="px-1.5 py-2 text-xs truncate" title={rental.customer.contactNumber}>{rental.customer.contactNumber}</td>
                           <td className="px-1.5 py-2 text-xs truncate" title={`${rental.quantity} ${rental.unitType}`}>{rental.quantity} {rental.unitType}</td>
@@ -1701,7 +1731,7 @@ if (showAdminDashboard) {
                     </tbody>
                     <tfoot className="bg-slate-50">
                       <tr>
-                        <td colSpan={7} className="px-1.5 py-2 text-right text-xs font-semibold text-slate-700">Filtered total</td>
+                        <td colSpan={8} className="px-1.5 py-2 text-right text-xs font-semibold text-slate-700">Filtered total</td>
                         <td className="px-1.5 py-2 text-xs font-semibold text-slate-900 truncate" title={formatCurrency(totalRentalsAmount)}>
                           {formatCurrency(totalRentalsAmount)}
                         </td>
@@ -1927,7 +1957,8 @@ if (showAdminDashboard) {
                 <ExpenseRangeCharts expenses={expenses} />
               )}
               {expensesSubTab === 'list' && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="lg:flex lg:items-start lg:gap-4">
+            <div className="flex-1 min-w-0 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 sm:p-5 border-b border-slate-100">
                 <div className="flex justify-between items-center mb-4 gap-3">
                   <h2 className="text-lg font-semibold text-slate-900">All Expenses</h2>
@@ -2086,6 +2117,15 @@ if (showAdminDashboard) {
                   </div>
                 </div>
               )}
+            </div>
+              <DayFilterCalendar
+                markedDates={(expenses || []).map((expense) => dayKey(expense.date))}
+                selectedDate={expenseFilter.dateFrom && expenseFilter.dateFrom === expenseFilter.dateTo ? expenseFilter.dateFrom : ''}
+                onSelect={(date) => {
+                  setExpenseFilter((prev) => ({ ...prev, dateFrom: date, dateTo: date }))
+                  setExpensesPage(1)
+                }}
+              />
             </div>
               )}
             </>
