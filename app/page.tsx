@@ -1170,9 +1170,8 @@ const getExpenseCategory = (expense: Expense) => {
       if (toDate && rentalDate > toDate) return false
       if (rentalFilter.machine && rental.machineType !== rentalFilter.machine) return false
       if (rentalFilter.paymentStatus === 'DUE') {
-        const remaining = rental.totalAmount - (rental.paidAmount || 0)
-        const dueStatus = rental.paymentStatus === 'UNPAID' || rental.paymentStatus === 'PARTIALLY_PAID'
-        if (!dueStatus && remaining <= 0.009) return false
+        const status = (rental.paymentStatus || '').toUpperCase()
+        if (status !== 'UNPAID' && status !== 'PARTIALLY_PAID' && status !== 'PARTIAL') return false
       } else if (rentalFilter.paymentStatus && rental.paymentStatus !== rentalFilter.paymentStatus) {
         return false
       }
@@ -1584,48 +1583,48 @@ if (showAdminDashboard) {
                     </div>
                   </div>
                 </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              <div className="overflow-hidden">
+                <table className="w-full table-fixed">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">#</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Quantity</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
-                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
+                        <th className="w-[4%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">#</th>
+                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
+                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
+                        <th className="w-[10%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Customer</th>
+                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Contact</th>
+                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Qty</th>
+                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
+                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Paid</th>
+                        <th className="w-[8%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="w-[9%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Pending</th>
+                        <th className="w-[10%] px-1.5 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
                       {filteredRentals.slice((overviewPage - 1) * 10, overviewPage * 10).map((rental, index) => (
                         <tr key={rental.id} className="hover:bg-slate-50/80">
-                          <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-500">
+                          <td className="px-1.5 py-2 text-xs text-slate-500">
                             {(overviewPage - 1) * 10 + index + 1}
                           </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
+                          <td className="px-1.5 py-2 text-xs text-slate-700">
                             {formatDateDDMMYYYY(rental.date)}
                           </td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm capitalize">{rental.machineType}</td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.operator.name}</td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm max-w-[8rem] truncate" title={rental.customer.name}>{rental.customer.name}</td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.customer.contactNumber}</td>
-                          <td className="px-3 py-3 whitespace-nowrap text-sm">{rental.quantity} {rental.unitType}</td>
-                          <td className="px-3 py-3 text-sm font-medium">{formatCurrency(rental.totalAmount)}</td>
-                          <td className="px-3 py-3 text-sm">{formatCurrency(rental.paidAmount || 0)}</td>
-                          <td className="px-3 py-3 text-sm">
-                            <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                          <td className="px-1.5 py-2 text-xs capitalize truncate" title={rental.machineType}>{rental.machineType === 'excavator' ? 'JCB' : rental.machineType}</td>
+                          <td className="px-1.5 py-2 text-xs truncate" title={rental.operator.name}>{rental.operator.name}</td>
+                          <td className="px-1.5 py-2 text-xs truncate" title={rental.customer.name}>{rental.customer.name}</td>
+                          <td className="px-1.5 py-2 text-xs truncate" title={rental.customer.contactNumber}>{rental.customer.contactNumber}</td>
+                          <td className="px-1.5 py-2 text-xs truncate" title={`${rental.quantity} ${rental.unitType}`}>{rental.quantity} {rental.unitType}</td>
+                          <td className="px-1.5 py-2 text-xs font-medium truncate" title={formatCurrency(rental.totalAmount)}>{formatCurrency(rental.totalAmount)}</td>
+                          <td className="px-1.5 py-2 text-xs truncate" title={formatCurrency(rental.paidAmount || 0)}>{formatCurrency(rental.paidAmount || 0)}</td>
+                          <td className="px-1.5 py-2 text-xs">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
                               rental.paymentStatus === 'PAID' ? 'bg-emerald-50 text-emerald-700' :
                               rental.paymentStatus === 'PARTIALLY_PAID' ? 'bg-amber-50 text-amber-700' :
                               'bg-rose-50 text-rose-700'
-                            }`}>{rental.paymentStatus}</span>
+                            }`}>{rental.paymentStatus === 'PARTIALLY_PAID' ? 'Partial' : rental.paymentStatus === 'PAID' ? 'Paid' : 'Unpaid'}</span>
                           </td>
-                          <td className="px-3 py-3 text-sm">
+                          <td className="px-1.5 py-2 text-xs truncate" title={formatCurrency(rental.paymentStatus === 'PAID' ? 0 : rental.totalAmount - (rental.paidAmount || 0))}>
                             {rental.paymentStatus === 'PAID' ? (
                               <span className="text-emerald-700">{formatCurrency(0)}</span>
                             ) : (
@@ -1633,17 +1632,17 @@ if (showAdminDashboard) {
                             )}
                           </td>
 
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            <div className="flex gap-1">
+                          <td className="px-1 py-2">
+                            <div className="flex flex-wrap gap-0.5">
                               {canEdit && (
                                   <button
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         startEditRental(rental)
                                       }}
-                                      className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
+                                      className="p-1 rounded-lg text-blue-600 hover:bg-blue-50"
                                   >
-                                    <Edit size={14}/>
+                                    <Edit size={13}/>
                                   </button>
                               )}
                               {canEdit && (
@@ -1654,9 +1653,9 @@ if (showAdminDashboard) {
                                         setShowPaymentModal(true)
                                         setAdditionalCollectedByUserId(user?.id ?? null)
                                       }}
-                                      className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
+                                      className="p-1 rounded-lg text-emerald-600 hover:bg-emerald-50"
                                   >
-                                    <IndianRupee size={14}/>
+                                    <IndianRupee size={13}/>
                                   </button>
                               )}
                               <button
@@ -1664,9 +1663,9 @@ if (showAdminDashboard) {
                                     e.stopPropagation()
                                     setSelectedRentalForBreakdown(rental)
                                   }}
-                                  className="p-1.5 rounded-lg text-violet-600 hover:bg-violet-50"
+                                  className="p-1 rounded-lg text-violet-600 hover:bg-violet-50"
                               >
-                                <BarChart3 size={14}/>
+                                <BarChart3 size={13}/>
                               </button>
                               <button
                                   onClick={(e) => {
@@ -1676,11 +1675,11 @@ if (showAdminDashboard) {
                                       setShowBillModal(true)
                                     }
                                   }}
-                                  className={`p-1.5 rounded-lg ${rental.billId ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
+                                  className={`p-1 rounded-lg ${rental.billId ? 'text-indigo-600 hover:bg-indigo-50' : 'text-slate-300 cursor-not-allowed'}`}
                                   title={rental.billId ? 'View Bill' : 'No Bill Available'}
                                   disabled={!rental.billId}
                               >
-                                <FileText size={14}/>
+                                <FileText size={13}/>
                               </button>
                               {canEdit && (
                                   <button
@@ -1688,9 +1687,9 @@ if (showAdminDashboard) {
                                         e.stopPropagation()
                                         deleteRental(rental.id)
                                       }}
-                                      className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50"
+                                      className="p-1 rounded-lg text-rose-600 hover:bg-rose-50"
                                   >
-                                    <Trash2 size={14}/>
+                                    <Trash2 size={13}/>
                                   </button>
                               )}
                             </div>
@@ -1700,18 +1699,18 @@ if (showAdminDashboard) {
                     </tbody>
                     <tfoot className="bg-slate-50">
                       <tr>
-                        <td colSpan={7} className="px-3 py-3 text-right text-sm font-semibold text-slate-700">Filtered total</td>
-                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-slate-900">
+                        <td colSpan={7} className="px-1.5 py-2 text-right text-xs font-semibold text-slate-700">Filtered total</td>
+                        <td className="px-1.5 py-2 text-xs font-semibold text-slate-900 truncate" title={formatCurrency(totalRentalsAmount)}>
                           {formatCurrency(totalRentalsAmount)}
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-emerald-700">
+                        <td className="px-1.5 py-2 text-xs font-semibold text-emerald-700 truncate" title={formatCurrency(totalPaidAmount)}>
                           {formatCurrency(totalPaidAmount)}
                         </td>
-                        <td className="px-3 py-3"></td>
-                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-rose-700">
+                        <td className="px-1.5 py-2"></td>
+                        <td className="px-1.5 py-2 text-xs font-semibold text-rose-700 truncate" title={formatCurrency(totalPendingAmount)}>
                           {formatCurrency(totalPendingAmount)}
                         </td>
-                        <td className="px-3 py-3"></td>
+                        <td className="px-1.5 py-2"></td>
                       </tr>
                     </tfoot>
                   </table>
