@@ -11,6 +11,7 @@ import FieldOperatorsAdmin from '@/components/gps/FieldOperatorsAdmin'
 import GpsMeasurementsAdmin from '@/components/gps/GpsMeasurementsAdmin'
 import CopilotSettingsAdmin from '@/components/copilot/CopilotSettingsAdmin'
 import OperatorCollections from '@/components/admin/OperatorCollections'
+import RevenueRangeCharts from '@/components/admin/RevenueRangeCharts'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -1441,6 +1442,8 @@ if (showAdminDashboard) {
                 </div>
               </div>
 
+              <RevenueRangeCharts rentals={rentals} />
+
               <div id="overview-recent-rentals" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-slate-100">
                   <div className="flex flex-col gap-3">
@@ -1558,6 +1561,7 @@ if (showAdminDashboard) {
                 <table className="w-full">
                     <thead className="bg-slate-50">
                       <tr>
+                        <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">#</th>
                         <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Date</th>
                         <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Machine</th>
                         <th className="px-3 py-3 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Operator</th>
@@ -1572,8 +1576,11 @@ if (showAdminDashboard) {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-slate-100">
-                      {filteredRentals.slice((overviewPage - 1) * 10, overviewPage * 10).map((rental) => (
+                      {filteredRentals.slice((overviewPage - 1) * 10, overviewPage * 10).map((rental, index) => (
                         <tr key={rental.id} className="hover:bg-slate-50/80">
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-500">
+                            {(overviewPage - 1) * 10 + index + 1}
+                          </td>
                           <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-700">
                             {formatDateDDMMYYYY(rental.date)}
                           </td>
@@ -1715,6 +1722,15 @@ if (showAdminDashboard) {
               <p className="text-sm text-slate-500 mb-5">Record diesel, maintenance, salary, or other costs.</p>
               <div className="space-y-4">
                 <div>
+                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Date</label>
+                  <input
+                    type="date"
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className="dash-input w-full"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium mb-1.5 text-slate-700">Description</label>
                   <input
                     type="text"
@@ -1758,15 +1774,6 @@ if (showAdminDashboard) {
                     </select>
                   </div>
                 )}
-                <div>
-                  <label className="block text-sm font-medium mb-1.5 text-slate-700">Date</label>
-                  <input
-                    type="date"
-                    value={expenseDate}
-                    onChange={(e) => setExpenseDate(e.target.value)}
-                    className="dash-input w-full"
-                  />
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1.5 text-slate-700">Diesel Cost (Optional)</label>
