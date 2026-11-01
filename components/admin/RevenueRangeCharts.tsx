@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import DateAmountBars from '@/components/admin/DateAmountBars'
+import DateAmountBars, { ChartMonthSelect, InsightCards, rangeForMonth } from '@/components/admin/DateAmountBars'
 
 type RentalPoint = {
   date: string
@@ -36,14 +36,19 @@ function machineLabel(type: string) {
   return type.charAt(0).toUpperCase() + type.slice(1)
 }
 
+function currentMonthRange() {
+  const now = new Date()
+  return rangeForMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+}
+
 export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[] }) {
-  const today = localYmd(new Date())
-  const [dateFrom, setDateFrom] = useState(() => localYmd(addDays(new Date(), -29)))
-  const [dateTo, setDateTo] = useState(today)
+  const initial = currentMonthRange()
+  const [dateFrom, setDateFrom] = useState(initial.from)
+  const [dateTo, setDateTo] = useState(initial.to)
 
   const { points, machineRows, total, grain } = useMemo(() => {
-    const start = parseLocalYmd(dateFrom || today)
-    const end = parseLocalYmd(dateTo || today)
+    const start = parseLocalYmd(dateFrom || initial.from)
+    const end = parseLocalYmd(dateTo || initial.to)
     const from = start <= end ? start : end
     const to = start <= end ? end : start
     const spanDays = Math.round((to.getTime() - from.getTime()) / 86400000) + 1
@@ -95,7 +100,7 @@ export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[]
 
     const total = inRange.reduce((sum, rental) => sum + (rental.totalAmount || 0), 0)
     return { points, machineRows, total, grain }
-  }, [dateFrom, dateTo, rentals, today])
+  }, [dateFrom, dateTo, initial.from, initial.to, rentals])
 
   const maxPoint = Math.max(...points.map((p) => p.amount), 0)
   const maxMachine = Math.max(...machineRows.map((p) => p.amount), 0)
@@ -110,27 +115,23 @@ export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[]
           </p>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="dash-input"
-          />
+          <ChartMonthSelect dateFrom={dateFrom} dateTo={dateTo} onMonth={(from, to) => { setDateFrom(from); setDateTo(to) }} />
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="dash-input" />
           <span className="text-slate-400 text-sm">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="dash-input"
-          />
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="dash-input" />
         </div>
       </div>
 
       {points.length === 0 ? (
         <p className="text-sm text-slate-500 py-8 text-center">No rental data in this range.</p>
       ) : (
-        <DateAmountBars points={points} maxAmount={maxPoint} barClass="bg-emerald-500" formatAmount={rupee} />
+        <DateAmountBars points={points} maxAmount={maxPoint} barClass="bg-emerald-500" lineClass="stroke-emerald-800" formatAmount={rupee} />
       )}
+
+      <div className="mt-6 pt-4 border-t border-slate-100">
+        <h3 className="text-sm font-semibold text-slate-900 mb-3">More insights</h3>
+        <InsightCards points={points} total={total} formatAmount={rupee} />
+      </div>
 
       <div className="mt-6 pt-4 border-t border-slate-100">
         <h3 className="text-sm font-semibold text-slate-900 mb-3">Revenue by machine</h3>
