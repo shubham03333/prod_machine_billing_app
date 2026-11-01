@@ -322,6 +322,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [activeTab, setActiveTab] = useState<'new-rental' | 'expenses' | 'rentals'>('new-rental')
   const [selectedRentalId, setSelectedRentalId] = useState<number | null>(null)
   const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps' | 'copilot' | 'collections'>('overview')
+  const [overviewSubTab, setOverviewSubTab] = useState<'rentals' | 'revenue'>('rentals')
   const [expenseFilter, setExpenseFilter] = useState({
     dateFrom: '',
     dateTo: '',
@@ -1368,6 +1369,33 @@ if (showAdminDashboard) {
 
           {adminActiveTab === 'overview' && (
             <>
+              <div className="flex gap-1 mb-4 p-1 bg-slate-100 rounded-xl w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setOverviewSubTab('rentals')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    overviewSubTab === 'rentals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Recent Rentals
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOverviewSubTab('revenue')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    overviewSubTab === 'revenue' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Revenue by date
+                </button>
+              </div>
+
+              {overviewSubTab === 'revenue' && (
+                <RevenueRangeCharts rentals={rentals} />
+              )}
+
+              {overviewSubTab === 'rentals' && (
+            <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                   <div className="flex items-center justify-between mb-3">
@@ -1408,6 +1436,7 @@ if (showAdminDashboard) {
                 <button
                   type="button"
                   onClick={() => {
+                    setOverviewSubTab('rentals')
                     setRentalFilter((prev) => ({ ...prev, paymentStatus: 'DUE' }))
                     setOverviewPage(1)
                     document.getElementById('overview-recent-rentals')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1441,8 +1470,6 @@ if (showAdminDashboard) {
                   </p>
                 </div>
               </div>
-
-              <RevenueRangeCharts rentals={rentals} />
 
               <div id="overview-recent-rentals" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 sm:p-5 border-b border-slate-100">
@@ -1673,14 +1700,18 @@ if (showAdminDashboard) {
                     </tbody>
                     <tfoot className="bg-slate-50">
                       <tr>
-                        <td colSpan={6} className="px-4 py-3 text-right text-sm font-medium text-slate-600">Filtered total</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-emerald-700 font-semibold">
+                        <td colSpan={7} className="px-3 py-3 text-right text-sm font-semibold text-slate-700">Filtered total</td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-slate-900">
                           {formatCurrency(totalRentalsAmount)}
                         </td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-emerald-700">
+                          {formatCurrency(totalPaidAmount)}
+                        </td>
+                        <td className="px-3 py-3"></td>
+                        <td className="px-3 py-3 whitespace-nowrap text-sm font-semibold text-rose-700">
+                          {formatCurrency(totalPendingAmount)}
+                        </td>
+                        <td className="px-3 py-3"></td>
                       </tr>
                     </tfoot>
                   </table>
@@ -1712,6 +1743,8 @@ if (showAdminDashboard) {
                   </div>
                 )}
               </div>
+            </>
+              )}
             </>
 
           )}
