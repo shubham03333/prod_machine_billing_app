@@ -55,6 +55,7 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [paymentToDelete, setPaymentToDelete] = useState<CollectionRow | null>(null)
+  const [subTab, setSubTab] = useState<'collections' | 'handover' | 'history'>('collections')
 
   async function load() {
     setLoading(true)
@@ -159,7 +160,39 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
         </p>
       </div>
 
-      {canEdit && (
+      <div className="flex gap-1 p-1 bg-slate-100 rounded-xl w-full sm:w-auto">
+        <button
+          type="button"
+          onClick={() => setSubTab('collections')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            subTab === 'collections' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Collections
+        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setSubTab('handover')}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${
+              subTab === 'handover' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Handover to main operator
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setSubTab('history')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium ${
+            subTab === 'history' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Handover history
+        </button>
+      </div>
+
+      {canEdit && subTab === 'handover' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <h3 className="font-semibold text-slate-900">Handover to main operator</h3>
           <p className="text-xs text-slate-500 mt-1">Moves cash from one operator to another. Customer payment history does not change.</p>
@@ -214,29 +247,7 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {operators.map((row) => (
-          <button
-            key={row.operatorId}
-            type="button"
-            onClick={() => setSelectedId(row.operatorId)}
-            className={`text-left bg-white rounded-2xl border shadow-sm p-4 ${selectedId === row.operatorId ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}
-          >
-            <p className="text-sm font-semibold text-slate-900">{row.operatorName}</p>
-            <p className="text-xs text-slate-500 mt-2">Collected from customers</p>
-            <p className="font-semibold text-slate-800">{formatCurrency(row.collected)}</p>
-            <p className="text-xs text-slate-500 mt-2">With them now</p>
-            <p className="dash-metric text-xl font-semibold text-emerald-700">{formatCurrency(row.holding)}</p>
-            <p className="text-[11px] text-slate-500 mt-2">
-              Handed over {formatCurrency(row.handedOver)} · Received {formatCurrency(row.received)}
-            </p>
-          </button>
-        ))}
-        {operators.length === 0 && !loading && (
-          <p className="text-sm text-slate-500 col-span-full">No tagged collections yet. New payments will appear here.</p>
-        )}
-      </div>
-
+      {subTab === 'history' && (
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-4 py-3 border-b">
           <h3 className="font-semibold text-slate-900">Handover history</h3>
@@ -270,6 +281,32 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
             </tbody>
           </table>
         </div>
+      </div>
+      )}
+
+      {subTab === 'collections' && (
+      <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {operators.map((row) => (
+          <button
+            key={row.operatorId}
+            type="button"
+            onClick={() => setSelectedId(row.operatorId)}
+            className={`text-left bg-white rounded-2xl border shadow-sm p-4 ${selectedId === row.operatorId ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}
+          >
+            <p className="text-sm font-semibold text-slate-900">{row.operatorName}</p>
+            <p className="text-xs text-slate-500 mt-2">Collected from customers</p>
+            <p className="font-semibold text-slate-800">{formatCurrency(row.collected)}</p>
+            <p className="text-xs text-slate-500 mt-2">With them now</p>
+            <p className="dash-metric text-xl font-semibold text-emerald-700">{formatCurrency(row.holding)}</p>
+            <p className="text-[11px] text-slate-500 mt-2">
+              Handed over {formatCurrency(row.handedOver)} · Received {formatCurrency(row.received)}
+            </p>
+          </button>
+        ))}
+        {operators.length === 0 && !loading && (
+          <p className="text-sm text-slate-500 col-span-full">No tagged collections yet. New payments will appear here.</p>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -324,6 +361,8 @@ export default function OperatorCollections({ userPin, canEdit }: { userPin: str
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {paymentToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
