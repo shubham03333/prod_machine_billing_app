@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import DateAmountBars from '@/components/admin/DateAmountBars'
 
 type RentalPoint = {
   date: string
@@ -84,8 +85,8 @@ export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[]
       key,
       amount,
       label: grain === 'day'
-        ? `${key.slice(8)}/${key.slice(5, 7)}`
-        : `${key.slice(5)}/${key.slice(2, 4)}`,
+        ? `${Number(key.slice(8))} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(key.slice(5, 7)) - 1]}`
+        : `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(key.slice(5, 7)) - 1]} ${key.slice(2, 4)}`,
     }))
 
     const machineRows = Array.from(machines.entries())
@@ -128,26 +129,7 @@ export default function RevenueRangeCharts({ rentals }: { rentals: RentalPoint[]
       {points.length === 0 ? (
         <p className="text-sm text-slate-500 py-8 text-center">No rental data in this range.</p>
       ) : (
-        <div className="overflow-x-auto pb-2">
-          <div className="flex items-end gap-1.5 min-h-[180px]" style={{ minWidth: Math.max(points.length * 28, 240) }}>
-            {points.map((point) => {
-              const height = maxPoint > 0 ? Math.max((point.amount / maxPoint) * 160, point.amount > 0 ? 4 : 0) : 0
-              return (
-                <div key={point.key} className="flex flex-col items-center gap-1 flex-1 min-w-[22px]">
-                  <div className="text-[10px] text-slate-500 h-4">
-                    {point.amount > 0 ? Math.round(point.amount / 1000) + 'k' : ''}
-                  </div>
-                  <div
-                    className="w-full max-w-[28px] rounded-t-md bg-emerald-500"
-                    style={{ height: `${height}px` }}
-                    title={`${point.key}: ${rupee(point.amount)}`}
-                  />
-                  <div className="text-[10px] text-slate-500">{point.label}</div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <DateAmountBars points={points} maxAmount={maxPoint} barClass="bg-emerald-500" formatAmount={rupee} />
       )}
 
       <div className="mt-6 pt-4 border-t border-slate-100">
