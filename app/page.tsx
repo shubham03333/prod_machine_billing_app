@@ -12,6 +12,7 @@ import GpsMeasurementsAdmin from '@/components/gps/GpsMeasurementsAdmin'
 import CopilotSettingsAdmin from '@/components/copilot/CopilotSettingsAdmin'
 import OperatorCollections from '@/components/admin/OperatorCollections'
 import RevenueRangeCharts from '@/components/admin/RevenueRangeCharts'
+import ExpenseRangeCharts from '@/components/admin/ExpenseRangeCharts'
 
 const MACHINES = [
   { id: 'harvester', name: 'Harvester', units: ['acre', 'guntha', 'hourly'] },
@@ -323,6 +324,7 @@ const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) =>
   const [selectedRentalId, setSelectedRentalId] = useState<number | null>(null)
   const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'add-expense' | 'expenses' | 'customers' | 'bills' | 'field-ops' | 'gps' | 'copilot' | 'collections'>('overview')
   const [overviewSubTab, setOverviewSubTab] = useState<'rentals' | 'revenue'>('rentals')
+  const [expensesSubTab, setExpensesSubTab] = useState<'list' | 'graphs'>('list')
   const [expenseFilter, setExpenseFilter] = useState({
     dateFrom: '',
     dateTo: '',
@@ -1900,6 +1902,31 @@ if (showAdminDashboard) {
           )}
 
           {adminActiveTab === 'expenses' && (
+            <>
+              <div className="flex gap-1 mb-4 p-1 bg-slate-100 rounded-xl w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setExpensesSubTab('list')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    expensesSubTab === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  All Expenses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpensesSubTab('graphs')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    expensesSubTab === 'graphs' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Expense graphs
+                </button>
+              </div>
+              {expensesSubTab === 'graphs' && (
+                <ExpenseRangeCharts expenses={expenses} />
+              )}
+              {expensesSubTab === 'list' && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 sm:p-5 border-b border-slate-100">
                 <div className="flex justify-between items-center mb-4 gap-3">
@@ -2060,6 +2087,8 @@ if (showAdminDashboard) {
                 </div>
               )}
             </div>
+              )}
+            </>
           )}
 
           {adminActiveTab === 'customers' && (
